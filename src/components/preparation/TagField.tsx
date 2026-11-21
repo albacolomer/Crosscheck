@@ -1,5 +1,6 @@
 import { useState, type KeyboardEvent } from 'react'
 import { Plus, X } from 'lucide-react'
+import type { FreshMotion } from '../../hooks/useFreshItems'
 
 type TagFieldProps = {
   id: string
@@ -8,9 +9,11 @@ type TagFieldProps = {
   hint: string
   values: string[]
   onChange: (values: string[]) => void
+  /** Entrance animation for values that were just added. */
+  motion?: (value: string) => FreshMotion | undefined
 }
 
-export function TagField({ id, label, placeholder, hint, values, onChange }: TagFieldProps) {
+export function TagField({ id, label, placeholder, hint, values, onChange, motion }: TagFieldProps) {
   const [draft, setDraft] = useState('')
 
   function addValue() {
@@ -35,17 +38,20 @@ export function TagField({ id, label, placeholder, hint, values, onChange }: Tag
       {label && <label htmlFor={id} className="mb-2 block text-sm font-medium text-slate-700">{label}</label>}
       <div className="flex min-h-12 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 shadow-sm transition focus-within:border-emerald-700 focus-within:ring-2 focus-within:ring-emerald-700/15">
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          {values.map((value, index) => (
-            <span key={`${value}-${index}`} className="inline-flex max-w-full items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-900">
-              <span className="truncate">{value}</span>
-              <button
-                type="button"
-                onClick={() => onChange(values.filter((_, valueIndex) => valueIndex !== index))}
-                aria-label={`Remove ${value}`}
-                className="rounded p-0.5 text-emerald-800/60 hover:bg-emerald-100 hover:text-emerald-950 focus:outline-none focus:ring-2 focus:ring-emerald-700"
-              ><X size={13} /></button>
-            </span>
-          ))}
+          {values.map((value, index) => {
+            const enter = motion?.(value)
+            return (
+              <span key={value} style={enter?.style} className={`${enter?.className ?? ''} inline-flex max-w-full items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-900`}>
+                <span className="truncate">{value}</span>
+                <button
+                  type="button"
+                  onClick={() => onChange(values.filter((_, valueIndex) => valueIndex !== index))}
+                  aria-label={`Remove ${value}`}
+                  className="rounded p-0.5 text-emerald-800/60 hover:bg-emerald-100 hover:text-emerald-950 focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                ><X size={13} /></button>
+              </span>
+            )
+          })}
           <input
             id={id}
             aria-label={label || placeholder}
