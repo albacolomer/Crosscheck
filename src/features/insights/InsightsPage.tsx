@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import type { InterviewSummary, ProcessingJob, SummaryResponse } from '../../../shared/api'
 import type { ClaimCheck, TranscriptSegment } from '../../../shared/types'
+import { findClaimSegment } from '../../lib/claimSpans'
 import { formatTimestamp } from '../live/mock-data'
 
 interface InsightsPageProps {
@@ -232,8 +233,7 @@ function getSpeakerStats(checks: ClaimCheck[], transcript: TranscriptSegment[], 
     if (segment.isFinal && !bySpeaker.has(name)) bySpeaker.set(name, { name, total: 0, counts: emptyCounts(), role: roleFor(name, intervieweeName) })
   }
   for (const check of checks) {
-    const quote = check.originalQuote.trim().toLocaleLowerCase()
-    const segment = quote ? transcript.find((item) => item.isFinal && item.text.toLocaleLowerCase().includes(quote)) : undefined
+    const segment = findClaimSegment(check, transcript)
     if (!segment) continue
     const speaker = bySpeaker.get(speakerOf(segment))
     if (!speaker) continue

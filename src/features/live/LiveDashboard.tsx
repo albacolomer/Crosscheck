@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -16,6 +16,7 @@ import {
 import type { ProcessingJob } from '../../../shared/api'
 import type { ClaimCheck, TranscriptSegment } from '../../../shared/types'
 import type { InterviewConnectionStatus } from '../../hooks/useLiveInterview'
+import { groupClaimsBySegment, type LocatedClaim } from '../../lib/claimSpans'
 import type { SpeakerCandidate, SpeakerIdentity } from '../../lib/speakers'
 import { AnimatedText } from './AnimatedText'
 import { formatTimestamp } from './mock-data'
@@ -61,12 +62,6 @@ function speakerStyle(speaker: SpeakerIdentity | undefined, speakers: SpeakerIde
   return intervieweeStyles[Math.max(0, position) % intervieweeStyles.length]
 }
 
-function findClaim(checks: ClaimCheck[], segment: TranscriptSegment) {
-  if (!segment.isFinal) return undefined
-  const text = segment.text.toLocaleLowerCase()
-  return checks.find((check) => check.originalQuote.trim() && text.includes(check.originalQuote.trim().toLocaleLowerCase()))
-}
-
 export function LiveDashboard({
   title,
   intervieweeName,
@@ -101,6 +96,7 @@ export function LiveDashboard({
     setAlertId(notifications.alertRequest.claimId)
   }
   const transcript = showAllTranscript ? fullTranscript : fullTranscript.slice(-5)
+  const claimsBySegment = groupClaimsBySegment(checks, fullTranscript)
   const speakerByLabel = new Map(speakers.map((speaker) => [speaker.label, speaker]))
   const isRecording = recordingStatus === 'recording' || recordingStatus === 'connecting'
   const isPaused = !isRecording
@@ -217,12 +213,24 @@ export function LiveDashboard({
         )}
         <div className="space-y-2">
           {transcript.map((segment) => {
-            const claim = findClaim(checks, segment)
+            const segmentClaims = claimsBySegment.get(segment.id)
             const speaker = segment.speaker ? speakerByLabel.get(segment.speaker.trim()) : undefined
             const style = speakerStyle(speaker, speakers)
-            const isInfoOpen = claim?.id === infoId
+            const segmentChecks = segmentClaims ? [...segmentClaims.located.map(({ check }) => check), ...segmentClaims.trailing] : []
+            const infoClaim = segmentChecks.find((check) => check.id === infoId && check.status === 'SUPPORTED')
+            const textClass = 'text-lg leading-[1.75] sm:text-xl 2xl:text-[26px]'
+            const renderBadge = (check: ClaimCheck) => (
+              <span key={check.status} className="live-badge-enter">
+                <ClaimStatusButton check={check} infoOpen={check.id === infoId} onClick={() => selectClaim(check)} />
+              </span>
+            )
+            const claimProps = (check: ClaimCheck, className = '') => ({
+              'data-claim-id': check.id,
+              'data-claim-status': check.status,
+              className: `scroll-mt-28 box-decoration-clone ${notifications.isFlashing(check.id) ? 'verdict-flash' : ''} ${className}`,
+            })
             return (
-              <article key={segment.id} className={`live-segment-enter relative py-4 sm:py-5 2xl:py-6 ${isInfoOpen ? 'z-30' : ''}`}>
+              <article key={segment.id} className={`live-segment-enter relative py-4 sm:py-5 2xl:py-6 ${infoClaim ? 'z-30' : ''}`}>
                 <div className="mb-2 flex items-center text-xs font-semibold uppercase tracking-[0.09em] text-slate-500 sm:text-sm">
                   <span className={`mr-2 h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
                   <span className={style.text}>{speaker?.name ?? 'Speaker'}</span> <span className="px-1 text-slate-300">·</span> {formatTimestamp(segment.timestampMs)}
@@ -230,25 +238,36 @@ export function LiveDashboard({
                   {failedExtractions.has(segment.id) && <span title={failedExtractions.get(segment.id) ?? undefined} className="ml-2 inline-flex items-center gap-1.5 normal-case tracking-normal text-rose-600"><AlertTriangle size={14} />Claim detection failed</span>}
                 </div>
 
-                {claim ? (
-                  <div data-claim-id={claim.id} data-claim-status={claim.status} className={`relative scroll-mt-28 ${notifications.isFlashing(claim.id) ? 'verdict-flash' : ''}`}>
-                    <span className={`text-lg leading-[1.75] sm:text-xl 2xl:text-[26px] transition-colors duration-300 ${claim.status === 'CHECKING' ? 'text-slate-500' : 'text-slate-900'}`}>
-                      <span className={claimUnderline(claim.status)}><AnimatedText id={segment.id} text={segment.text} /></span>
-                      {' '}
-                      <span key={claim.status} className="live-badge-enter">
-                        <ClaimStatusButton
-                          check={claim}
-                          infoOpen={isInfoOpen}
-                          onClick={() => selectClaim(claim)}
-                        />
-                      </span>
-                    </span>
-                    {isInfoOpen && claim.status === 'SUPPORTED' && (
-                      <ClaimInfoPopover check={claim} copiedText={copiedText} onCopy={copyText} onClose={() => setInfoId(null)} />
+                {segmentClaims ? (
+                  <div className="relative">
+                    <p className={`${textClass} ${style.body}`}>
+                      {segmentRuns(segment.text, segmentClaims.located).map((run, index) => (
+                        <Fragment key={run.check ? run.check.id : `text-${run.fromWord}`}>
+                          {index > 0 && ' '}
+                          {run.check ? (
+                            <span {...claimProps(run.check, `transition-colors duration-300 ${run.check.status === 'CHECKING' ? 'text-slate-500' : 'text-slate-900'}`)}>
+                              <span className={claimUnderline(run.check.status)}><AnimatedText id={segment.id} text={segment.text} fromWord={run.fromWord} toWord={run.toWord} /></span>
+                              {' '}
+                              {renderBadge(run.check)}
+                            </span>
+                          ) : (
+                            <AnimatedText id={segment.id} text={segment.text} fromWord={run.fromWord} toWord={run.toWord} />
+                          )}
+                        </Fragment>
+                      ))}
+                      {segmentClaims.trailing.map((check) => (
+                        <Fragment key={check.id}>
+                          {' '}
+                          <span {...claimProps(check)}>{renderBadge(check)}</span>
+                        </Fragment>
+                      ))}
+                    </p>
+                    {infoClaim && (
+                      <ClaimInfoPopover key={infoClaim.id} check={infoClaim} copiedText={copiedText} onCopy={copyText} onClose={() => setInfoId(null)} />
                     )}
                   </div>
                 ) : (
-                  <p className={`text-lg leading-[1.75] sm:text-xl 2xl:text-[26px] ${style.body}`}><AnimatedText id={segment.id} text={segment.text} /></p>
+                  <p className={`${textClass} ${style.body}`}><AnimatedText id={segment.id} text={segment.text} /></p>
                 )}
               </article>
             )
@@ -273,6 +292,26 @@ export function LiveDashboard({
       {activeAlert && <FactAlertModal key={activeAlert.id} check={activeAlert} intervieweeName={intervieweeName} copiedText={copiedText} onCopy={copyText} onDismiss={() => setAlertId(null)} />}
     </main>
   )
+}
+
+interface SegmentRun {
+  fromWord: number
+  toWord: number
+  check?: ClaimCheck
+}
+
+/** Splits a segment's words into plain runs and one run per located claim. */
+function segmentRuns(text: string, located: LocatedClaim[]): SegmentRun[] {
+  const wordCount = text.match(/\S+/gu)?.length ?? 0
+  const runs: SegmentRun[] = []
+  let next = 0
+  for (const { check, fromWord, toWord } of located) {
+    if (fromWord > next) runs.push({ fromWord: next, toWord: fromWord })
+    runs.push({ fromWord, toWord, check })
+    next = toWord
+  }
+  if (wordCount > next) runs.push({ fromWord: next, toWord: wordCount })
+  return runs
 }
 
 function claimUnderline(status: ClaimCheck['status']) {
