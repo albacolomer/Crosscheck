@@ -20,10 +20,13 @@ export const MAX_CLAIMS_PER_SEGMENT = 10
 const MAX_CANDIDATES = 25
 const MAX_QUOTE_CHARS = 1500
 const MAX_NORMALIZED_CHARS = 600
+const MAX_SUBJECT_CHARS = 160
 
 interface CandidateClaim {
   originalQuote: string
   normalizedClaim: string
+  /** Resolved entity the claim is about; empty when none was resolved. */
+  subject: string
 }
 
 interface ExtractionOutput {
@@ -41,7 +44,7 @@ export const CLAIM_EXTRACTION_SCHEMA: Record<string, unknown> = {
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['originalQuote', 'normalizedClaim'],
+        required: ['originalQuote', 'normalizedClaim', 'subject'],
         properties: {
           originalQuote: {
             type: 'string',
@@ -51,7 +54,12 @@ export const CLAIM_EXTRACTION_SCHEMA: Record<string, unknown> = {
           normalizedClaim: {
             type: 'string',
             description:
-              'The claim itself as one self-contained, neutral statement in the transcript\'s language, keeping its subject, period, scope, units and comparison base. Never prefixed with who said it ("The speaker claims", "El entrevistado dice que").',
+              'The claim itself as one self-contained, neutral statement in the transcript\'s language, keeping its subject, period, scope, units and comparison base, with "I", "my", "we", "our", "yo", "mi", "nuestro" and "your" replaced by the person, country or organization the conversation identifies. Never prefixed with who said it ("The speaker claims", "El entrevistado dice que").',
+          },
+          subject: {
+            type: 'string',
+            description:
+              'The person, country or organization the claim is about as identified from the conversation, with the role that makes it public ("Pedro Sánchez, President of the Government of Spain", "Spain", "Government of Spain"). Empty string when the claim names no such entity or it could not be resolved.',
           },
         },
       },
@@ -70,12 +78,18 @@ Do not extract:
 - predictions, promises, plans, intentions or hypotheticals;
 - questions, including statements with a confirmation tag ("Por Navarra, ¿no?", "That was 2019, right?") asked by the interviewer, and anything the interviewer says (speaker label "(interviewer)"): a question is never a claim, even when it presupposes a fact;
 - greetings, filler and small talk;
-- self-introductions and personal details about the speaker or the people present: their name, age, job, home, family, feelings, plans or own situation ("Me llamo Juan Carlos", "I live in Madrid");
+- self-introductions and personal details of private individuals: their name, age, job, home, family, feelings, plans or own situation ("Me llamo Juan Carlos", "I live in Madrid", "I'm a teacher"). A bare name ("I'm Pedro Sánchez") is never a claim;
 - remarks about the recording, the app, the microphone or the conversation itself ("A ver cuánto tarda", "let's see if this works");
 - claims made entirely in recent_segments (they were already processed). Use recent_segments only to understand the current segment. Questions in recent_segments were never checked.
 
+Public roles and first-person statements:
+- When the speaker identifies themselves (in the current segment, recent_segments or the interview context) as holding a public office or a public role at a named organization ("I'm Pedro Sánchez, the president of Spain", "Soy la consejera delegada de Iberdrola"), what they then say about that office, their mandate, their government, their country or their organization is a public fact, not a personal detail: extract it ("My mandate started in 2030", "We have 22 ministries", "Our unemployment rate is below 5%").
+- The self-introduction itself is extracted only when it asserts a public office or role of a named person: "Hello, I'm Pedro Sánchez, the president of Spain" -> "Pedro Sánchez is the President of the Government of Spain." Never extract a name alone or a private job.
+- Always use self-introductions as context for the rest of the conversation, even when they are not extracted.
+
 Answers to questions:
-- When the current segment answers the most recent question in recent_segments, check the answer in the context of that question: normalizedClaim is the fact that question and answer assert together, in the question's language and with the question's subject, period and scope.
+- A question asked earlier in the current segment counts too (one segment may contain the interviewer's question and the interviewee's answer).
+- When the current segment answers the most recent question in recent_segments or earlier in the current segment, check the answer in the context of that question: normalizedClaim is the fact that question and answer assert together, in the question's language and with the question's subject, period and scope.
   - "¿Quién gobernaba en España en 2019?" + "Pedro Sánchez." -> "En 2019 gobernaba en España Pedro Sánchez."
   - "¿En 2019 gobernaba Rajoy?" + "Sí, claro." -> "En 2019 gobernaba Rajoy."; + "No." -> "En 2019 no gobernaba Rajoy."
   - "How many people live in Madrid?" + "About 3 million." -> "About 3 million people live in Madrid."
@@ -88,14 +102,19 @@ Completeness:
 - When the current segment completes a statement that began at the end of recent_segments, emit the combined claim. Its originalQuote is the verbatim ending of the preceding segment and the verbatim beginning of the current segment joined by a single space.
 
 References and faithfulness:
-- Resolve pronouns and vague references ("we", "it", "that year", "the company") only when recent_segments or the interview context explicitly identify them; for example, the interviewee's organization from the context, or the subject of an explicit preceding question.
+- Resolve first- and second-person references and pronouns ("I", "my", "we", "our", "us", "yo", "mi", "nosotros", "nuestro", "nuestra", "it", "that year", "the company", and "you"/"your"/"tu"/"su" in the interviewer's question) from the conversation: the current segment, recent_segments and the interview context. Who "I" is comes from a self-introduction or the interview context; "your" in a question addressed to the interviewee means the interviewee. When the speaker holds a national office, "we", "our country", "our government" and "our unemployment rate" refer to that country or its government; when they speak for an organization, to that organization.
+  - "Hello, I'm Pedro Sánchez, the president of Spain ... When did your mandate start? My mandate started in 2030." -> "Pedro Sánchez's mandate as President of the Government of Spain started in 2030." (subject: "Pedro Sánchez, President of the Government of Spain")
+  - same speaker: "We have 22 ministries." -> "The Government of Spain has 22 ministries." (subject: "Government of Spain"); "Our unemployment rate is below 5%." -> "Spain's unemployment rate is below 5%." (subject: "Spain")
+  - "Soy Ana Pérez, alcaldesa de Valencia. Nuestro presupuesto es de 1.000 millones." -> "El presupuesto del Ayuntamiento de Valencia es de 1.000 millones."
+- Naming the resolved subject is required, not attribution: write "Pedro Sánchez's mandate started in 2030", never "Pedro Sánchez says his mandate started in 2030".
 - Speaker labels may carry a role, e.g. "Speaker 1 (interviewer)" and "Speaker 2 (interviewee)"; "unknown speaker" means the role is not known yet.
 - Never invent or assume a subject, date, place, unit, denominator or comparison base. Keep qualifiers such as "per unit produced", "about", "since 2019" or "in Europe" exactly; never turn a relative or per-unit figure into an absolute one.
-- If a reference cannot be resolved explicitly, keep the speaker's wording in normalizedClaim, or emit nothing if the claim would not be checkable.
+- If a reference cannot be resolved from the conversation, keep the speaker's wording in normalizedClaim and leave subject empty, or emit nothing if the claim would not be checkable.
 
 Output:
 - originalQuote: the exact wording from the transcript, verbatim (same words, numbers and punctuation); no paraphrasing, no ellipses, no added words.
-- normalizedClaim: the claim itself, stated as one self-contained, neutral sentence in the transcript's language, as it would be fact-checked ("El cielo es verde.", "Spain generated more than half of its electricity from renewables in 2024."). Never add who said it: no "The speaker claims that", "El entrevistado dice que", "<name> said that". Hedges such as "creo que" or "I think" are dropped from normalizedClaim when the rest is a factual assertion. When the speaker says "we" or "our company", name the organization only if the context identifies it; otherwise keep the speaker's wording.
+- normalizedClaim: the claim itself, stated as one self-contained, neutral sentence in the transcript's language, as it would be fact-checked ("El cielo es verde.", "Spain generated more than half of its electricity from renewables in 2024."). Never add who said it: no "The speaker claims that", "El entrevistado dice que", "<name> said that". Naming the person, country or organization the claim is ABOUT is required when the conversation identifies it. Hedges such as "creo que" or "I think" are dropped from normalizedClaim when the rest is a factual assertion. Keep the claimed figure, date or fact exactly as said, even when it looks wrong (a past event dated in the future is still extracted as said).
+- subject: the resolved entity the claim is about, or "" when none.
 - One entry per distinct claim; do not repeat the same claim. Return at most ${MAX_CLAIMS_PER_SEGMENT} claims. Return an empty list when there is nothing to check.`
 
 function invalid(message: string): never {
@@ -116,14 +135,20 @@ export function validateExtractionOutput(value: unknown): ExtractionOutput {
   const result: CandidateClaim[] = []
   claims.forEach((claim, index) => {
     if (!isRecord(claim)) invalid(`claims[${index}] must be an object`)
-    const { originalQuote, normalizedClaim } = claim
+    const { originalQuote, normalizedClaim, subject } = claim
     if (typeof originalQuote !== 'string') invalid(`claims[${index}].originalQuote must be a string`)
     if (typeof normalizedClaim !== 'string') invalid(`claims[${index}].normalizedClaim must be a string`)
+    if (subject !== undefined && typeof subject !== 'string') invalid(`claims[${index}].subject must be a string`)
     const quote = normalizeWhitespace(originalQuote)
     const normalized = stripAttribution(normalizeWhitespace(normalizedClaim))
     if (!quote || !normalized) return
     if (quote.length > MAX_QUOTE_CHARS || normalized.length > MAX_NORMALIZED_CHARS) return
-    result.push({ originalQuote: quote, normalizedClaim: normalized })
+    const resolved = typeof subject === 'string' ? normalizeWhitespace(subject) : ''
+    result.push({
+      originalQuote: quote,
+      normalizedClaim: normalized,
+      subject: resolved.length <= MAX_SUBJECT_CHARS ? resolved : '',
+    })
   })
   return { claims: result }
 }
@@ -205,6 +230,7 @@ export function createClaimExtractor({ generate }: { generate: StructuredGenerat
         originalQuote: candidate.originalQuote,
         normalizedClaim: candidate.normalizedClaim,
         timestampMs: segment.timestampMs,
+        ...(candidate.subject ? { subject: candidate.subject } : {}),
       })
     }
     return claims
