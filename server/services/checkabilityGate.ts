@@ -3,7 +3,9 @@
  *
  * Classifies the current segment before claim extraction so that only statements public
  * sources could confirm or refute reach the extractor. Greetings, self-introductions and other
- * personal details, opinions, questions, filler and remarks about the app are skipped.
+ * personal details, opinions, questions, filler and remarks about the app are skipped. A question
+ * is never checkable; a short answer ("Sí", "Pedro Sánchez") is judged together with the preceding
+ * question from the recent segments, which are part of the Decisions input.
  * The Decisions API returns a typed choice with probabilities (about 0.3–0.6 s, input tokens
  * only), which keeps the gate cheap. https://developers.openai.com/api/docs/guides/decisions
  *
@@ -28,6 +30,7 @@ export const DEFAULT_DECISIONS_MODEL = 'gpt-6-luna'
 const DEFAULT_TIMEOUT_MS = 8000
 /** Borderline segments still pass when the factual_claim probability reaches this value. */
 export const CHECKABLE_MIN_PROBABILITY = 0.35
+/** Enough preceding turns to see the question a short answer responds to. */
 const RECENT_LIMITS = { maxSegments: 3, maxChars: 900 }
 
 const KINDS = ['factual_claim', 'personal', 'opinion', 'question', 'filler', 'other'] as const
@@ -36,7 +39,7 @@ const SEGMENT_KIND_QUESTION: OpenAI.DecisionCreateParams.QuestionParamChoice = {
   type: 'choice',
   name: 'segment_kind',
   instructions:
-    'Classify the current segment of a live interview transcript. If it asserts any objective fact about the world, choose factual_claim even when it also contains other content. Whether an assertion is true or false is irrelevant. Recent segments only help resolve references such as a short answer to a preceding question. The transcript may be in any language.',
+    'Classify the current segment of a live journalist interview transcript. The journalist asks questions; facts asserted by the interviewee are what get checked. If the current segment asserts any objective fact about the world, choose factual_claim even when it also contains other content. Whether an assertion is true or false is irrelevant. ANSWERS: when the current segment answers a question in the recent segments, judge the question and the answer together. A short answer such as "Sí", "No", "Yes, of course", a name ("Pedro Sánchez") or a figure ("Unos 3 millones") to a factual question (who governed in 2019? did X happen? how many?) is factual_claim, because together they assert a checkable fact. QUESTIONS: a segment that only asks is question, including a statement followed by a confirmation tag ("Por Navarra, ¿no?", "That was in 2019, right?") from the interviewer or an unknown speaker; a question is never factual_claim even if it presupposes a fact. Speaker labels may say who is the interviewer and who is the interviewee; an interviewee statement ending in a tag such as "¿no?" or "¿verdad?" still asserts its fact. The transcript may be in any language.',
   choices: [
     {
       value: 'factual_claim',
@@ -48,7 +51,10 @@ const SEGMENT_KIND_QUESTION: OpenAI.DecisionCreateParams.QuestionParamChoice = {
       description: 'Greeting, self-introduction, or personal detail about the speaker or people present (name, age, feelings, own situation or plans).',
     },
     { value: 'opinion', description: 'Opinion, value judgement, prediction, promise or hypothetical.' },
-    { value: 'question', description: 'A question.' },
+    {
+      value: 'question',
+      description: 'Only asks: a question, or a statement with a confirmation tag ("¿no?", "¿verdad?", "right?") asked by the interviewer. Never an answer.',
+    },
     { value: 'filler', description: 'Filler, small talk, or remarks about the recording, the app or the conversation.' },
     { value: 'other', description: 'Anything else.' },
   ],
@@ -84,7 +90,8 @@ export function interpretDecision(decision: OpenAI.Decision): CheckabilityDecisi
   const factual = answer.probabilities?.find(item => item.value === 'factual_claim')?.probability
   const probability = typeof factual === 'number' && Number.isFinite(factual) ? factual : answer.choice === 'factual_claim' ? 1 : 0
   return {
-    checkable: answer.choice === 'factual_claim' || probability >= CHECKABLE_MIN_PROBABILITY,
+    // Questions are never checked on their own; their answer is checked with them as context.
+    checkable: answer.choice === 'factual_claim' || (answer.choice !== 'question' && probability >= CHECKABLE_MIN_PROBABILITY),
     kind: answer.choice,
     probability,
   }

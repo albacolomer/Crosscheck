@@ -71,7 +71,8 @@ export interface ExtractionInput {
   segment: TranscriptSegment
   /**
    * Optional bounded preceding conversation (final segments only, oldest first), supplied by
-   * Person 5. Used only to resolve references and statements split across segments.
+   * Person 5. Used to resolve references, statements split across segments, and answers to a
+   * preceding question (the answer is checked as question + answer).
    */
   recentSegments?: TranscriptSegment[]
 }
@@ -84,7 +85,7 @@ export type ExtractClaims = (input: ExtractionInput, signal?: AbortSignal) => Pr
 export interface CheckabilityDecision {
   /** True when the segment asserts something public sources could confirm or refute. */
   checkable: boolean
-  /** Decisions API choice: factual_claim, personal, opinion, question, filler or other. */
+  /** Decisions API choice: factual_claim, personal, opinion, question, filler or other. `question` is never checkable. */
   kind: string
   /** Probability of `factual_claim`, from 0 to 1. */
   probability: number
@@ -162,6 +163,11 @@ export type SummarizeInterview = (input: SummaryInput) => PipelineSummary
 export interface PipelineDependencies {
   /** Optional gate; when it says a segment is not checkable, extraction is skipped. Gate failures fail open. */
   classifyCheckability?: ClassifyCheckability
+  /**
+   * Speaker labels that belong to the interviewer (default `['Speaker 1', 'Journalist']`; `[]` disables
+   * speaker roles). Interviewer segments never produce claims but stay context for the next answer.
+   */
+  interviewerSpeakers?: readonly string[]
   extractClaims: ExtractClaims
   searchEvidence: SearchEvidence
   analyzeEvidence: AnalyzeEvidence

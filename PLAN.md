@@ -124,6 +124,7 @@ Agree on shared types and integration events before building the modules. Reuse 
 | P4-E | Implemented | `pipeline/openaiProvider.ts` (20 s cap per call), `factCheckPipeline.ts` |
 | P4-F | Implemented | default export of `factCheckPipeline.ts`, loaded by default; store passes up to 6 preceding final segments; job timeout 45 s |
 | Gate | Implemented | `checkabilityGate.ts`: one OpenAI Decisions API call per final segment decides whether it is checkable before extraction (see the handoff §0) |
+| Q&A | Implemented | Questions are not checked; answers are checked with the preceding question as context (interviewer speaker label or question-only text skips extraction; store waits up to 3.5 s for a diarization label; see the handoff §0) |
 
 **Verified:** `npm run lint`, `npm run build`, and `npx tsc -p tsconfig.node.json --noEmit` pass. Backend smoke run with real OpenAI and Tavily keys: two final segments posted over REST were extracted, searched and judged (the Eiffel Tower height/date claim came back `SUPPORTED` with Britannica, Wikipedia and the official site as evidence); the summary endpoint reconciled the counts. With an empty `TAVILY_API_KEY` the server still boots and the check job fails with `CONFIGURATION: Tavily API key is not configured.`, excluded from the summary.
 
