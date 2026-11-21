@@ -6,28 +6,31 @@ import {
   Clock3,
   ExternalLink,
   Flag,
+  LoaderCircle,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
   TriangleAlert,
 } from 'lucide-react'
-import type { ClaimCheck, Verdict } from '../../../shared/types'
-import { demoInterview, formatTimestamp } from '../live/mock-data'
+import type { ClaimCheck } from '../../../shared/types'
+import { demoInterview, demoTranscript, formatTimestamp } from '../live/mock-data'
 
 interface InsightsPageProps {
   checks: ClaimCheck[]
   onBack: () => void
 }
 
-const stats: { status: Verdict; label: string; color: string; icon: typeof ShieldCheck }[] = [
+const stats: { status: ClaimCheck['status']; label: string; color: string; icon: typeof ShieldCheck }[] = [
   { status: 'SUPPORTED', label: 'Supported', color: 'text-emerald-700 bg-emerald-50 border-emerald-100', icon: CheckCircle2 },
   { status: 'CONTRADICTED', label: 'Contradicted', color: 'text-rose-700 bg-rose-50 border-rose-100', icon: ShieldAlert },
   { status: 'MISLEADING', label: 'Misleading', color: 'text-amber-800 bg-amber-50 border-amber-100', icon: TriangleAlert },
   { status: 'UNVERIFIED', label: 'Unverified', color: 'text-slate-600 bg-slate-100 border-slate-200', icon: CircleHelp },
+  { status: 'CHECKING', label: 'Checking', color: 'text-blue-700 bg-blue-50 border-blue-100', icon: LoaderCircle },
 ]
 
 export function InsightsPage({ checks, onBack }: InsightsPageProps) {
-  const countFor = (status: Verdict) => checks.filter((check) => check.status === status).length
+  const countFor = (status: ClaimCheck['status']) => checks.filter((check) => check.status === status).length
+  const speakerStats = getSpeakerStats(checks)
   const keyChecks = checks
     .filter((check) => check.status === 'MISLEADING' || check.status === 'CONTRADICTED' || check.status === 'UNVERIFIED')
     .sort((a, b) => b.timestampMs - a.timestampMs)
@@ -55,19 +58,29 @@ export function InsightsPage({ checks, onBack }: InsightsPageProps) {
           <div className="flex items-center gap-2 text-xs text-slate-400"><Clock3 size={14} /> 02:43 interview</div>
         </div>
 
-        <section className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <section className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
           <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             <p className="text-xs font-semibold text-slate-500">Claims detected</p>
             <p className="mt-3 text-3xl font-bold tracking-tight">{checks.length}</p>
-            <p className="mt-1 text-[11px] text-slate-400">in this interview</p>
+            <p className="mt-1 text-[11px] text-slate-400">{checks.length - countFor('CHECKING')} checked</p>
           </div>
           {stats.map(({ status, label, color, icon: Icon }) => (
             <div key={status} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-              <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border ${color}`}><Icon size={16} /></span>
+              <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border ${color}`}><Icon size={16} className={status === 'CHECKING' && countFor(status) > 0 ? 'animate-spin' : ''} /></span>
               <p className="mt-3 text-3xl font-bold tracking-tight">{countFor(status)}</p>
               <p className="mt-1 text-[11px] font-medium text-slate-500">{label}</p>
             </div>
           ))}
+        </section>
+
+        <section className="mt-7 rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-col justify-between gap-1 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:px-6">
+            <div><h2 className="text-sm font-bold">Claim checks by speaker</h2><p className="mt-1 text-[11px] text-slate-400">Counts are linked to the speaker who made each claim.</p></div>
+            <span className="text-[11px] text-slate-400">{speakerStats.length} speakers</span>
+          </div>
+          <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
+            {speakerStats.map((speaker) => <SpeakerCard key={speaker.name} speaker={speaker} />)}
+          </div>
         </section>
 
         <section className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(270px,0.65fr)]">
@@ -100,6 +113,69 @@ export function InsightsPage({ checks, onBack }: InsightsPageProps) {
         </div>
       </div>
     </main>
+  )
+}
+
+interface SpeakerStats {
+  name: string
+  total: number
+  counts: Record<ClaimCheck['status'], number>
+}
+
+function getSpeakerStats(checks: ClaimCheck[]): SpeakerStats[] {
+  const bySpeaker = new Map<string, SpeakerStats>()
+  const emptyCounts = (): SpeakerStats['counts'] => ({
+    SUPPORTED: 0,
+    CONTRADICTED: 0,
+    MISLEADING: 0,
+    UNVERIFIED: 0,
+    CHECKING: 0,
+  })
+
+  for (const segment of demoTranscript) {
+    if (segment.speaker && !bySpeaker.has(segment.speaker)) {
+      bySpeaker.set(segment.speaker, { name: segment.speaker, total: 0, counts: emptyCounts() })
+    }
+  }
+
+  for (const check of checks) {
+    const segment = demoTranscript.find((item) => item.text === check.originalQuote)
+    if (!segment?.speaker) continue
+    const speaker = bySpeaker.get(segment.speaker)
+    if (!speaker) continue
+    speaker.total += 1
+    speaker.counts[check.status] += 1
+  }
+
+  return [...bySpeaker.values()]
+}
+
+function SpeakerCard({ speaker }: { speaker: SpeakerStats }) {
+  const initials = speaker.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()
+  const counts: { status: ClaimCheck['status']; label: string; style: string }[] = [
+    { status: 'SUPPORTED', label: 'supported', style: 'bg-emerald-50 text-emerald-800' },
+    { status: 'CONTRADICTED', label: 'contradicted', style: 'bg-rose-50 text-rose-800' },
+    { status: 'MISLEADING', label: 'misleading', style: 'bg-amber-50 text-amber-900' },
+    { status: 'UNVERIFIED', label: 'uncertain', style: 'bg-slate-100 text-slate-700' },
+    { status: 'CHECKING', label: 'checking', style: 'bg-blue-50 text-blue-800' },
+  ]
+  const activeCounts = counts.filter(({ status }) => speaker.counts[status] > 0)
+
+  return (
+    <article className="rounded-xl border border-slate-200 p-4">
+      <div className="flex items-center gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">{initials}</span>
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-sm font-bold text-slate-800">{speaker.name}</h3>
+          <p className="mt-0.5 text-[11px] text-slate-500">{speaker.name === demoInterview.intervieweeName ? 'Interviewee' : 'Interviewer'} · {speaker.total} {speaker.total === 1 ? 'claim' : 'claims'}</p>
+        </div>
+      </div>
+      {activeCounts.length ? (
+        <div className="mt-4 flex flex-wrap gap-1.5">
+          {activeCounts.map(({ status, label, style }) => <span key={status} className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${style}`}>{speaker.counts[status]} {label}</span>)}
+        </div>
+      ) : <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">No verifiable claims detected for this speaker.</p>}
+    </article>
   )
 }
 
