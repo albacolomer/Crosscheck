@@ -4,12 +4,19 @@ import type { InterviewSnapshot, ProcessingJob, SummaryResponse } from '../../sh
 import type { AiPipeline, ExtractedClaim } from '../types/pipeline.ts'
 import { ApiError } from '../routes/validation.ts'
 import { PipelineUnavailableError } from './pipelineAdapter.ts'
+import { PipelineError } from './pipeline/contracts.ts'
+import { summarizeInterview } from './summaryGenerator.ts'
 
 interface Session {
   state: InterviewSnapshot
   listeners: Set<(snapshot: InterviewSnapshot) => void>
   claims: Map<string, { job: ProcessingJob; factCheck: ClaimCheck }>
 }
+
+export const DEFAULT_JOB_TIMEOUT_MS = 45000
+
+/** Preceding final segments sent to extraction as conversational context. */
+const RECENT_SEGMENTS = 6
 
 const normalize = (text: string) => text.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase()
 
@@ -20,7 +27,11 @@ export class InterviewStore {
   private pipeline: AiPipeline
   private timeoutMs: number
 
-  constructor(pipeline: AiPipeline, timeoutMs = 30000) {
+  /**
+   * Per-job budget, measured from when the job starts running (not while queued). A fact-check job is
+   * one Tavily search (12s cap) plus one OpenAI analysis call (20s cap), so 45s leaves headroom over 32s.
+   */
+  constructor(pipeline: AiPipeline, timeoutMs = DEFAULT_JOB_TIMEOUT_MS) {
     this.pipeline = pipeline
     this.timeoutMs = timeoutMs
   }
@@ -76,6 +87,18 @@ export class InterviewStore {
     return { segment: structuredClone(segment), duplicate: false }
   }
 
+  /**
+   * Attaches a speaker label to an existing segment. Diarization finishes after a segment is final,
+   * so this is the only change allowed to a final segment; it also applies after the interview ends.
+   */
+  setSpeaker(id: string, segmentId: string, speaker: string) {
+    const session = this.session(id)
+    const segment = session.state.transcript.find(entry => entry.id === segmentId)
+    if (!segment || segment.speaker === speaker) return
+    segment.speaker = speaker
+    this.publish(session)
+  }
+
   private queueExtraction(session: Session, segment: TranscriptSegment, job?: ProcessingJob) {
     const extraction: ProcessingJob = job ?? { id: randomUUID(), kind: 'extraction', status: 'queued', segmentId: segment.id }
     if (!job) session.state.jobs.push(extraction)
@@ -83,6 +106,7 @@ export class InterviewStore {
       const claims = await this.pipeline.extractClaims({
         context: this.context(session),
         segment: structuredClone(segment),
+        recentSegments: this.recentSegments(session, segment),
       }, signal)
       if (!Array.isArray(claims) || claims.length > 20 || claims.some(claim => !validClaim(claim))) {
         throw new Error('Invalid claim extraction result.')
@@ -91,6 +115,12 @@ export class InterviewStore {
         for (const claim of claims) this.queueClaim(session, { ...claim, timestampMs: segment.timestampMs })
       }
     })
+  }
+
+  private recentSegments(session: Session, segment: TranscriptSegment): TranscriptSegment[] {
+    const index = session.state.transcript.findIndex(entry => entry.id === segment.id)
+    const preceding = index === -1 ? session.state.transcript : session.state.transcript.slice(0, index)
+    return structuredClone(preceding.filter(entry => entry.isFinal && entry.id !== segment.id).slice(-RECENT_SEGMENTS))
   }
 
   private context(session: Session): InterviewContext {
@@ -156,9 +186,11 @@ export class InterviewStore {
       } catch (error) {
         // Provider errors may contain API keys or private upstream response bodies.
         job.status = 'failed'
+        // PipelineError messages are sanitized by contract (no keys, no upstream bodies).
         job.error = error instanceof PipelineUnavailableError
           ? error.message
-          : controller.signal.aborted ? 'Processing timed out.' : 'Fact-check pipeline processing failed.'
+          : controller.signal.aborted ? 'Processing timed out.'
+          : error instanceof PipelineError ? `${error.code}: ${error.message}` : 'Fact-check pipeline processing failed.'
         const check = session.state.factChecks.find(c => c.id === job.claimId)
         if (check) Object.assign(check, { status: 'UNVERIFIED', confidence: 0, explanation: job.error })
       } finally {
@@ -205,17 +237,11 @@ export class InterviewStore {
 
   summary(id: string): SummaryResponse {
     const { factChecks, jobs } = this.session(id).state
+    // Failed checks carry a placeholder UNVERIFIED status; they are not investigations, so exclude them.
     const failedClaimIds = new Set(jobs.filter(job => job.status === 'failed').map(job => job.claimId))
-    const completed = factChecks.filter(c => c.status !== 'CHECKING' && !failedClaimIds.has(c.id))
     const pendingJobs = jobs.filter(j => j.status === 'queued' || j.status === 'running').length
-    const count = (status: ClaimCheck['status']) => completed.filter(c => c.status === status).length
     return {
-      summary: {
-        totalClaims: completed.length, supported: count('SUPPORTED'), contradicted: count('CONTRADICTED'),
-        misleading: count('MISLEADING'), unverified: count('UNVERIFIED'),
-        keyFindings: completed.filter(c => c.status !== 'UNVERIFIED').map(c => `${c.normalizedClaim}: ${c.explanation ?? c.status}`),
-        unansweredQuestions: [...new Set(completed.filter(c => c.status === 'UNVERIFIED').flatMap(c => c.suggestedQuestions.length ? c.suggestedQuestions.map(q => q.text) : [c.normalizedClaim]))],
-      },
+      summary: summarizeInterview({ checks: factChecks.filter(c => !failedClaimIds.has(c.id)) }),
       pendingJobs, failedJobs: jobs.filter(j => j.status === 'failed').length, isComplete: pendingJobs === 0,
     }
   }

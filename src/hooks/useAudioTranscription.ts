@@ -5,7 +5,12 @@ import { createLiveTranscription, type LiveTranscription } from '../services/aud
 type TranscriptionStatus = 'idle' | 'connecting' | 'recording' | 'stopping' | 'error'
 
 function upsertSegment(segments: TranscriptSegment[], segment: TranscriptSegment) {
-  if (segments.some(({ id, isFinal }) => id === segment.id && isFinal)) return segments
+  const final = segments.find(({ id, isFinal }) => id === segment.id && isFinal)
+  // A final segment only changes when its speaker label arrives.
+  if (final) {
+    if (!segment.speaker || segment.speaker === final.speaker) return segments
+    return segments.map((entry) => entry === final ? { ...final, speaker: segment.speaker } : entry)
+  }
   const updated = segments.filter(({ id }) => id !== segment.id)
   if (segment.text.trim()) updated.push(segment)
   return updated.sort((a, b) => a.timestampMs - b.timestampMs)
@@ -13,6 +18,7 @@ function upsertSegment(segments: TranscriptSegment[], segment: TranscriptSegment
 
 export function useAudioTranscription(interviewId?: string) {
   const sessionRef = useRef<LiveTranscription | null>(null)
+  const finalSegmentsRef = useRef(new Map<string, TranscriptSegment>())
   const [status, setStatus] = useState<TranscriptionStatus>('idle')
   const [segments, setSegments] = useState<TranscriptSegment[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -28,7 +34,12 @@ export function useAudioTranscription(interviewId?: string) {
     const session = createLiveTranscription({
       interviewId,
       onReady: () => setStatus('recording'),
-      onSegment: (segment) => setSegments((current) => upsertSegment(current, segment)),
+      onSegment: (segment) => {
+        if (segment.isFinal && segment.text.trim() && !finalSegmentsRef.current.has(segment.id)) {
+          finalSegmentsRef.current.set(segment.id, segment)
+        }
+        setSegments((current) => upsertSegment(current, segment))
+      },
       onEnd: (failure) => {
         sessionRef.current = null
         setSegments((current) => current.filter(({ isFinal }) => isFinal))
@@ -37,17 +48,21 @@ export function useAudioTranscription(interviewId?: string) {
       },
     })
     sessionRef.current = session
+    finalSegmentsRef.current = new Map()
     setSegments([])
     setError(null)
     setStatus('connecting')
     void session.start()
   }, [interviewId])
 
-  const stop = useCallback(async () => {
+  /** Resolves with the session's final segments, oldest first, once the last ones have arrived. */
+  const stop = useCallback(async (): Promise<TranscriptSegment[]> => {
     const session = sessionRef.current
-    if (!session) return
-    setStatus('stopping')
-    await session.stop()
+    if (session) {
+      setStatus('stopping')
+      await session.stop()
+    }
+    return [...finalSegmentsRef.current.values()].sort((a, b) => a.timestampMs - b.timestampMs)
   }, [])
 
   return { status, segments, error, start, stop }

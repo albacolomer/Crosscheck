@@ -28,8 +28,17 @@ export interface InterviewSummary {
   contradicted: number
   misleading: number
   unverified: number
+  /** Checks still CHECKING; excluded from totals and verdict counts. */
+  pendingClaims: number
   keyFindings: string[]
+  /** Empty unless explicit answer state exists; see followUpQuestions. */
   unansweredQuestions: string[]
+  /** Normalized claims judged CONTRADICTED or MISLEADING. */
+  contradictions: string[]
+  /** Normalized claims judged UNVERIFIED. */
+  needsResearch: string[]
+  /** Distinct suggested questions from final checks. */
+  followUpQuestions: string[]
 }
 
 export interface SummaryResponse {

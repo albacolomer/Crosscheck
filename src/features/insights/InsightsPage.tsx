@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   ArrowDownToLine,
   Check,
@@ -9,11 +9,18 @@ import {
   ShieldAlert,
   TriangleAlert,
 } from 'lucide-react'
-import type { ClaimCheck } from '../../../shared/types'
-import { demoInterview, demoTranscript, formatTimestamp } from '../live/mock-data'
+import type { InterviewSummary, ProcessingJob, SummaryResponse } from '../../../shared/api'
+import type { ClaimCheck, TranscriptSegment } from '../../../shared/types'
+import { formatTimestamp } from '../live/mock-data'
 
 interface InsightsPageProps {
+  interviewId?: string
+  createdAt?: number
+  title: string
+  intervieweeName: string
+  transcript: TranscriptSegment[]
   checks: ClaimCheck[]
+  jobs: ProcessingJob[]
   onBack: () => void
 }
 
@@ -27,49 +34,55 @@ const stateColors: Record<ClaimState, string> = {
   CHECKING: '#6366f1',
 }
 
-const claimTitles: Record<string, string> = {
-  c1: '18% transport investment',
-  c2: '40% lower pollution',
-  c3: 'Bike lanes in every district',
-  c4: 'Madrid population',
-  c5: 'Bus ridership growth',
-}
-
 const laneDefinitions: { label: string; states: ClaimState[] }[] = [
   { label: 'Supported', states: ['SUPPORTED'] },
   { label: 'Needs review', states: ['CONTRADICTED', 'MISLEADING'] },
   { label: 'Uncertain', states: ['UNVERIFIED', 'CHECKING'] },
 ]
 
-export function InsightsPage({ checks, onBack }: InsightsPageProps) {
+export function InsightsPage({ interviewId, createdAt, title, intervieweeName, transcript, checks: allChecks, jobs, onBack }: InsightsPageProps) {
   const [completedActions, setCompletedActions] = useState<string[]>([])
-  const speakers = useMemo(() => getSpeakerStats(checks), [checks])
+  const summary = useInterviewSummary(interviewId, allChecks)
+  // A failed job leaves a placeholder UNVERIFIED check; it is an operational failure, not a verdict.
+  const failedClaimIds = new Set(jobs.filter((job) => job.kind === 'fact-check' && job.status === 'failed').map((job) => job.claimId))
+  const checks = allChecks.filter((check) => !failedClaimIds.has(check.id))
+  const failedCount = allChecks.length - checks.length
+  const speakers = getSpeakerStats(checks, transcript, intervieweeName)
   const countFor = (status: ClaimState) => checks.filter((check) => check.status === status).length
-  const supportedCount = countFor('SUPPORTED')
-  const reviewCount = countFor('CONTRADICTED') + countFor('MISLEADING')
-  const uncertainCount = countFor('UNVERIFIED') + countFor('CHECKING')
-  const durationMs = Math.max(...demoTranscript.map((segment) => segment.timestampMs))
+  const counts = summary ?? {
+    totalClaims: checks.length - countFor('CHECKING'), pendingClaims: countFor('CHECKING'), supported: countFor('SUPPORTED'),
+    contradicted: countFor('CONTRADICTED'), misleading: countFor('MISLEADING'), unverified: countFor('UNVERIFIED'),
+  }
+  const claimCount = counts.totalClaims + counts.pendingClaims
+  const supportedCount = counts.supported
+  const reviewCount = counts.contradicted + counts.misleading
+  const uncertainCount = counts.unverified + counts.pendingClaims
+  const durationMs = transcript.reduce((max, segment) => Math.max(max, segment.timestampMs), 0)
   const findings = checks
     .filter((check) => check.status === 'CONTRADICTED' || check.status === 'MISLEADING' || check.status === 'UNVERIFIED')
     .sort((a, b) => priorityFor(b.status) - priorityFor(a.status))
     .slice(0, 3)
-  const nextSteps = checks
-    .filter((check) => check.status === 'CONTRADICTED' || check.status === 'MISLEADING' || check.status === 'UNVERIFIED')
-    .map((check) => ({ id: check.id, text: check.suggestedQuestions[0]?.text }))
-    .filter((item): item is { id: string; text: string } => Boolean(item.text))
+  const nextSteps = summary
+    ? summary.followUpQuestions.map((text) => ({ id: text, text }))
+    : checks
+      .filter((check) => check.status === 'CONTRADICTED' || check.status === 'MISLEADING' || check.status === 'UNVERIFIED')
+      .map((check) => ({ id: check.id, text: check.suggestedQuestions[0]?.text }))
+      .filter((item): item is { id: string; text: string } => Boolean(item.text))
 
   function exportSummary() {
     const rows = [
-      `Interview: ${demoInterview.title}`,
-      `Interviewee: ${demoInterview.intervieweeName}`,
+      `Interview: ${title}`,
+      `Interviewee: ${intervieweeName}`,
       `Duration: ${formatTimestamp(durationMs)}`,
-      `Claims detected: ${checks.length}`,
+      `Claims detected: ${claimCount}`,
       `Supported: ${supportedCount}`,
-      `Contradicted: ${countFor('CONTRADICTED')}`,
-      `Misleading: ${countFor('MISLEADING')}`,
-      `Unverified: ${countFor('UNVERIFIED')}`,
-      `Checking: ${countFor('CHECKING')}`,
+      `Contradicted: ${counts.contradicted}`,
+      `Misleading: ${counts.misleading}`,
+      `Unverified: ${counts.unverified}`,
+      `Checking: ${counts.pendingClaims}`,
+      `Failed checks: ${failedCount}`,
       '',
+      ...(summary?.keyFindings.length ? ['Key findings:', ...summary.keyFindings, ''] : []),
       ...checks.map((check) => `${formatTimestamp(check.timestampMs)} | ${check.status} | ${check.normalizedClaim}`),
     ]
     const url = URL.createObjectURL(new Blob([rows.join('\n')], { type: 'text/plain;charset=utf-8' }))
@@ -89,8 +102,8 @@ export function InsightsPage({ checks, onBack }: InsightsPageProps) {
       <header className="border-b border-slate-200 bg-white">
         <div className="flex min-h-[84px] flex-wrap items-center justify-between gap-4 px-6 py-4 sm:px-8 2xl:min-h-[96px] 2xl:px-10">
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl">Interview: {demoInterview.title}</h1>
-            <p className="mt-1 text-xs text-slate-500 sm:text-sm">Insights · 21 Nov 2026 · {formatDuration(durationMs)} · English</p>
+            <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl">Interview: {title}</h1>
+            <p className="mt-1 text-xs text-slate-500 sm:text-sm">Insights{createdAt !== undefined && ` · ${new Date(createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}`} · {formatDuration(durationMs)}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button onClick={onBack} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 sm:text-sm"><FileText size={18} /> Open transcript</button>
@@ -101,10 +114,10 @@ export function InsightsPage({ checks, onBack }: InsightsPageProps) {
 
       <div className="mx-auto max-w-[1400px] px-5 pb-14 pt-6 sm:px-7 lg:px-9 2xl:max-w-[1760px] 2xl:px-10 2xl:pt-8">
         <section className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-          <MetricCard label="Claims detected" value={checks.length} detail={`in ${formatDuration(durationMs)}`} icon={<FileText size={19} />} tone="slate" />
-          <MetricCard label="Supported" value={supportedCount} detail={`${percent(supportedCount, checks.length)}% of claims`} icon={<CheckCircle2 size={19} />} tone="green" />
-          <MetricCard label="Needs review" value={reviewCount} detail={`${countFor('CONTRADICTED')} contradicted · ${countFor('MISLEADING')} misleading`} icon={<ShieldAlert size={19} />} tone="red" />
-          <MetricCard label="Uncertain / checking" value={uncertainCount} detail={`${countFor('UNVERIFIED')} unverified · ${countFor('CHECKING')} pending`} icon={<CircleHelp size={19} />} tone="gray" />
+          <MetricCard label="Claims detected" value={claimCount} detail={`in ${formatDuration(durationMs)}`} icon={<FileText size={19} />} tone="slate" />
+          <MetricCard label="Supported" value={supportedCount} detail={`${percent(supportedCount, claimCount)}% of claims`} icon={<CheckCircle2 size={19} />} tone="green" />
+          <MetricCard label="Needs review" value={reviewCount} detail={`${counts.contradicted} contradicted · ${counts.misleading} misleading`} icon={<ShieldAlert size={19} />} tone="red" />
+          <MetricCard label="Uncertain / checking" value={uncertainCount} detail={`${counts.unverified} unverified · ${counts.pendingClaims} pending`} icon={<CircleHelp size={19} />} tone="gray" />
         </section>
 
         <section className="mt-4 grid items-stretch gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(360px,0.9fr)]">
@@ -123,7 +136,7 @@ export function InsightsPage({ checks, onBack }: InsightsPageProps) {
 
           <div className="rounded-xl bg-[#17181c] p-5 text-white sm:p-6">
             <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-slate-300">Overall takeaway</p>
-            <h2 className="mt-3 text-xl font-bold leading-[1.35] sm:text-2xl">The budget figure is supported. Other claims need context or follow-up.</h2>
+            <h2 className="mt-3 text-xl font-bold leading-[1.35] sm:text-2xl">{takeaway(claimCount, supportedCount, reviewCount, uncertainCount)}</h2>
             <div className="mt-5 space-y-3">
               {nextSteps.map((step) => {
                 const done = completedActions.includes(step.id)
@@ -136,7 +149,8 @@ export function InsightsPage({ checks, onBack }: InsightsPageProps) {
           </div>
         </section>
 
-        <p className="mt-4 text-xs leading-5 text-slate-500">Demo data only. Verdicts apply to individual statements and do not measure a speaker’s overall accuracy.</p>
+        {failedCount > 0 && <p className="mt-4 text-xs leading-5 text-rose-700">{failedCount} check{failedCount === 1 ? '' : 's'} could not be completed and {failedCount === 1 ? 'is' : 'are'} excluded from these results.</p>}
+        <p className="mt-4 text-xs leading-5 text-slate-500">Verdicts apply to individual statements and do not measure a speaker’s overall accuracy.</p>
       </div>
     </main>
   )
@@ -184,7 +198,7 @@ function TimelinePanel({ checks, durationMs }: { checks: ClaimCheck[]; durationM
               <div key={check.id} className="inline-flex min-w-0 items-center gap-2 text-xs text-slate-600 sm:text-sm" title={check.normalizedClaim}>
                 <span className={`h-3 w-3 shrink-0 rounded-full ${check.status === 'CONTRADICTED' ? 'rounded-[2px]' : ''}`} style={{ backgroundColor: stateColors[check.status] }} />
                 <span className="shrink-0 font-mono text-slate-500">{formatTimestamp(check.timestampMs)}</span>
-                <span className="max-w-[220px] truncate 2xl:max-w-[300px]">{claimTitles[check.id] ?? check.normalizedClaim}</span>
+                <span className="max-w-[220px] truncate 2xl:max-w-[300px]">{check.normalizedClaim}</span>
               </div>
             ))}
           </div>
@@ -202,25 +216,60 @@ function LegendDot({ color, label }: { color: string; label: string }) {
 
 interface SpeakerStats {
   name: string
+  role: string
   total: number
   counts: Record<ClaimState, number>
 }
 
-function getSpeakerStats(checks: ClaimCheck[]): SpeakerStats[] {
+const UNLABELLED_SPEAKER = 'Unlabelled speaker'
+
+function getSpeakerStats(checks: ClaimCheck[], transcript: TranscriptSegment[], intervieweeName: string): SpeakerStats[] {
   const bySpeaker = new Map<string, SpeakerStats>()
   const emptyCounts = (): SpeakerStats['counts'] => ({ SUPPORTED: 0, CONTRADICTED: 0, MISLEADING: 0, UNVERIFIED: 0, CHECKING: 0 })
-  for (const segment of demoTranscript) {
-    if (segment.speaker && !bySpeaker.has(segment.speaker)) bySpeaker.set(segment.speaker, { name: segment.speaker, total: 0, counts: emptyCounts() })
+  const speakerOf = (segment: TranscriptSegment) => segment.speaker?.trim() || UNLABELLED_SPEAKER
+  for (const segment of transcript) {
+    const name = speakerOf(segment)
+    if (segment.isFinal && !bySpeaker.has(name)) bySpeaker.set(name, { name, total: 0, counts: emptyCounts(), role: roleFor(name, intervieweeName) })
   }
   for (const check of checks) {
-    const segment = demoTranscript.find((item) => item.text === check.originalQuote)
-    if (!segment?.speaker) continue
-    const speaker = bySpeaker.get(segment.speaker)
+    const quote = check.originalQuote.trim().toLocaleLowerCase()
+    const segment = quote ? transcript.find((item) => item.isFinal && item.text.toLocaleLowerCase().includes(quote)) : undefined
+    if (!segment) continue
+    const speaker = bySpeaker.get(speakerOf(segment))
     if (!speaker) continue
     speaker.total += 1
     speaker.counts[check.status] += 1
   }
   return [...bySpeaker.values()].sort((a, b) => b.total - a.total)
+}
+
+function roleFor(name: string, intervieweeName: string) {
+  if (name === intervieweeName) return 'Interviewee'
+  if (name === 'Journalist') return 'Interviewer'
+  return name === UNLABELLED_SPEAKER ? 'Speaker not identified by transcription' : 'Speaker'
+}
+
+/** Latest backend summary (P4-D); refetched as checks change. Null until loaded or when unavailable. */
+function useInterviewSummary(interviewId: string | undefined, checks: ClaimCheck[]) {
+  const [loaded, setLoaded] = useState<{ interviewId: string; summary: InterviewSummary }>()
+  const version = checks.map((check) => `${check.id}:${check.status}`).join('|')
+  useEffect(() => {
+    if (!interviewId) return
+    const controller = new AbortController()
+    fetch(`/api/interviews/${encodeURIComponent(interviewId)}/summary`, { headers: { Accept: 'application/json' }, signal: controller.signal })
+      .then((response) => response.ok ? response.json() as Promise<SummaryResponse> : null)
+      .then((payload) => { if (payload?.summary) setLoaded({ interviewId, summary: payload.summary }) })
+      .catch(() => { /* The page falls back to counting the snapshot's checks. */ })
+    return () => controller.abort()
+  }, [interviewId, version])
+  return loaded && loaded.interviewId === interviewId ? loaded.summary : null
+}
+
+function takeaway(total: number, supported: number, review: number, uncertain: number) {
+  if (!total) return 'No factual claims were detected in this interview.'
+  if (review) return `${review} of ${total} claim${total === 1 ? '' : 's'} ${review === 1 ? 'needs' : 'need'} review before publication.`
+  if (uncertain) return `${supported} claim${supported === 1 ? ' is' : 's are'} supported; ${uncertain} still ${uncertain === 1 ? 'needs' : 'need'} research.`
+  return `All ${total} claim${total === 1 ? ' is' : 's are'} supported by the available sources.`
 }
 
 const donutOrder: ClaimState[] = ['SUPPORTED', 'CONTRADICTED', 'MISLEADING', 'UNVERIFIED', 'CHECKING']
@@ -230,7 +279,7 @@ function SpeakerPanel({ speakers }: { speakers: SpeakerStats[] }) {
     <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
       <h2 className="text-base font-bold sm:text-lg">Speakers</h2>
       <div className="mt-2 divide-y divide-slate-100">
-        {speakers.map((speaker) => <SpeakerCard key={speaker.name} speaker={speaker} />)}
+        {speakers.length ? speakers.map((speaker) => <SpeakerCard key={speaker.name} speaker={speaker} />) : <p className="py-4 text-sm text-slate-500">No transcript was recorded.</p>}
       </div>
     </section>
   )
@@ -249,7 +298,7 @@ function SpeakerCard({ speaker }: { speaker: SpeakerStats }) {
       </div>
       <div className="min-w-0 flex-1">
         <h3 className="truncate text-sm font-bold text-slate-800 sm:text-base">{speaker.name}</h3>
-        <p className="mt-1 text-xs text-slate-500">{speaker.name === demoInterview.intervieweeName ? 'Interviewee' : 'Interviewer'}</p>
+        <p className="mt-1 text-xs text-slate-500">{speaker.role}</p>
         <p className="mt-1 text-xs leading-[1.5] text-slate-600 sm:text-sm">{speaker.total ? summary : 'No factual claims detected'}</p>
         {speaker.total > 0 && <p className="mt-1 text-xs font-semibold text-emerald-700 sm:text-sm">{correctRate}% of checked claims supported</p>}
       </div>

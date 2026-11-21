@@ -1,6 +1,13 @@
 import { useEffect, useState, type MouseEvent } from 'react'
 import { AlertCircle, AudioLines, Check, LoaderCircle, Plus, Trash2, X } from 'lucide-react'
+import type { ParsedPreparation } from '../../shared/preparation'
 import type { InterviewContext } from '../../shared/types'
+import { Collapsible } from '../components/preparation/Collapsible'
+import { DictationPanel } from '../components/preparation/DictationPanel'
+import '../components/preparation/preparation-motion.css'
+import { useContextDictation } from '../hooks/useContextDictation'
+import { useFreshItems } from '../hooks/useFreshItems'
+import { mergeInterviewees, mergeNotes, mergeTopics } from '../lib/mergePreparation'
 import { TagField } from '../components/preparation/TagField'
 
 export type Interviewee = { name: string; role: string; organization: string }
@@ -30,6 +37,16 @@ const commonTopics = [
   { name: 'Technology & AI', recommended: false },
 ]
 
+const commonTopicNames = commonTopics.map(({ name }) => name)
+
+function isFilledPerson(person: Interviewee) {
+  return Boolean(person.name.trim() || person.role.trim() || person.organization.trim())
+}
+
+function countLabel(count: number, singular: string, plural: string) {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
 type MicrophoneStatus = 'checking' | 'permission-needed' | 'ready' | 'denied' | 'missing' | 'unavailable' | 'requesting'
 
 export function PreparationPage({ onStart }: PreparationPageProps) {
@@ -40,8 +57,52 @@ export function PreparationPage({ onStart }: PreparationPageProps) {
   const [editingTopics, setEditingTopics] = useState(false)
   const [editingNotes, setEditingNotes] = useState(false)
   const [microphoneStatus, setMicrophoneStatus] = useState<MicrophoneStatus>('checking')
+  const [dictationSummary, setDictationSummary] = useState<string | null>(null)
+  const dictation = useContextDictation({ knownTopics: commonTopicNames, onResult: applyDictation })
+  // Indexes of people and notes, and topic names, that were just added and should animate in.
+  const freshPeople = useFreshItems<number>()
+  const freshTopics = useFreshItems<string>()
+  const freshNotes = useFreshItems<number>()
 
-  const completedInterviewees = interviewees.filter((person) => person.name.trim() || person.role.trim() || person.organization.trim())
+  /** Merges dictated context into what the user already entered, then opens the filled editors. */
+  function applyDictation(result: ParsedPreparation) {
+    const filled = [
+      result.interviewees.length && countLabel(result.interviewees.length, 'person', 'people'),
+      result.topics.length && countLabel(result.topics.length, 'topic', 'topics'),
+      result.notes.length && countLabel(result.notes.length, 'note', 'notes'),
+    ].filter(Boolean)
+    setDictationSummary(`Filled from dictation: ${filled.join(', ')}.`)
+    // Animate and highlight what dictation added or filled in, staggered people → topics → notes.
+    let step = 0
+    if (result.interviewees.length) {
+      const kept = interviewees.filter(isFilledPerson)
+      const merged = mergeInterviewees(interviewees, result.interviewees)
+      const changed = merged.flatMap((person, index) => {
+        const before = kept[index]
+        return !before || before.role !== person.role || before.organization !== person.organization ? [index] : []
+      })
+      setInterviewees(merged)
+      setEditingPeople(true)
+      freshPeople.mark(changed, { highlight: true, firstStep: step })
+      step += changed.length
+    }
+    if (result.topics.length) {
+      const merged = mergeTopics(topics, result.topics, commonTopicNames)
+      const added = merged.slice(topics.length)
+      setTopics(merged)
+      freshTopics.mark(added, { highlight: true, firstStep: step })
+      step += added.length
+    }
+    if (result.notes.length) {
+      const kept = notes.filter((note) => note.trim()).length
+      const merged = mergeNotes(notes, result.notes)
+      setNotes(merged)
+      setEditingNotes(true)
+      freshNotes.mark(merged.map((_, index) => index).slice(kept), { highlight: true, firstStep: step })
+    }
+  }
+
+  const completedInterviewees = interviewees.filter(isFilledPerson)
   const peopleLabel = completedInterviewees.length
     ? completedInterviewees.map((person) => [person.name.trim(), person.role.trim(), person.organization.trim()].filter(Boolean).join(' · ')).join('  /  ')
     : 'Add one or more people to fact-check their statements'
@@ -160,17 +221,35 @@ export function PreparationPage({ onStart }: PreparationPageProps) {
   }
 
   function addInterviewee() {
-    setInterviewees((current) => [...current, { name: '', role: '', organization: '' }])
+    freshPeople.mark([interviewees.length])
+    setInterviewees([...interviewees, { name: '', role: '', organization: '' }])
+  }
+
+  function removeInterviewee(index: number) {
+    // Indexes shift after a removal, so drop marks instead of moving them to other people.
+    freshPeople.clear()
+    setInterviewees((current) => current.filter((_, personIndex) => personIndex !== index))
   }
 
   function addNote() {
-    setNotes((current) => [...current, ''])
+    freshNotes.mark([notes.length])
+    setNotes([...notes, ''])
+  }
+
+  function removeNote(index: number) {
+    freshNotes.clear()
+    setNotes((current) => current.filter((_, itemIndex) => itemIndex !== index))
+  }
+
+  function changeTopics(next: string[]) {
+    freshTopics.mark(next.filter((topic) => !topics.includes(topic)))
+    setTopics(next)
   }
 
   function toggleTopic(topic: string) {
-    setTopics((current) => current.some((item) => item.toLocaleLowerCase() === topic.toLocaleLowerCase())
-      ? current.filter((item) => item.toLocaleLowerCase() !== topic.toLocaleLowerCase())
-      : [...current, topic])
+    changeTopics(topics.some((item) => item.toLocaleLowerCase() === topic.toLocaleLowerCase())
+      ? topics.filter((item) => item.toLocaleLowerCase() !== topic.toLocaleLowerCase())
+      : [...topics, topic])
   }
 
   return (
@@ -207,16 +286,27 @@ export function PreparationPage({ onStart }: PreparationPageProps) {
             <h1 id="context-title" className="text-base font-semibold text-slate-900 sm:text-lg">Interview context <span className="ml-1 font-normal text-slate-500">Optional · helps fact-checking</span></h1>
           </div>
 
+          <DictationPanel
+            phase={dictation.phase}
+            transcript={dictation.transcript}
+            error={dictation.error}
+            filledSummary={dictationSummary}
+            onStart={() => { setDictationSummary(null); dictation.start() }}
+            onStop={dictation.stop}
+          />
+
           <div className="grid grid-cols-[62px_minmax(0,1fr)_auto] items-start gap-2 border-b border-slate-100 px-4 py-3.5 sm:grid-cols-[72px_minmax(0,1fr)_auto] sm:gap-3 sm:px-5">
             <span className="pt-2 text-xs font-semibold tracking-wide text-slate-600 sm:text-sm">WHO</span>
             <div className="min-w-0 pt-1.5">
-              {!editingPeople && <p className={completedInterviewees.length ? 'text-base text-slate-800' : 'text-sm leading-5 text-slate-500'}>{peopleLabel}</p>}
-              {editingPeople && (
+              <Collapsible open={!editingPeople}>
+                <p key={peopleLabel} className={`prep-fade ${completedInterviewees.length ? 'text-base text-slate-800' : 'text-sm leading-5 text-slate-500'}`}>{peopleLabel}</p>
+              </Collapsible>
+              <Collapsible open={editingPeople}>
                 <div className="space-y-3">
                   {interviewees.map((person, index) => (
-                    <fieldset key={index} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <fieldset key={index} style={freshPeople.motion(index)?.style} className={`${freshPeople.motion(index)?.className ?? ''} rounded-lg border border-slate-200 bg-slate-50 p-3`}>
                       <legend className="sr-only">Person {index + 1}</legend>
-                      <div className="mb-2 flex items-center justify-between"><span className="text-sm font-semibold text-slate-600">Person {index + 1}</span><button type="button" onClick={() => setInterviewees((current) => current.filter((_, personIndex) => personIndex !== index))} aria-label={`Remove person ${index + 1}`} className="rounded p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-700"><Trash2 size={18} /></button></div>
+                      <div className="mb-2 flex items-center justify-between"><span className="text-sm font-semibold text-slate-600">Person {index + 1}</span><button type="button" onClick={() => removeInterviewee(index)} aria-label={`Remove person ${index + 1}`} className="rounded p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-700"><Trash2 size={18} /></button></div>
                       <div className="grid gap-2 sm:grid-cols-3">
                         <label className="text-xs font-medium text-slate-700 sm:text-sm">Name<input value={person.name} onChange={(event) => updateInterviewee(index, 'name', event.target.value)} placeholder="Full name" className={`${inputClassName} mt-1 font-normal`} /></label>
                         <label className="text-xs font-medium text-slate-700 sm:text-sm">Role<input value={person.role} onChange={(event) => updateInterviewee(index, 'role', event.target.value)} placeholder="Role or title" className={`${inputClassName} mt-1 font-normal`} /></label>
@@ -229,7 +319,7 @@ export function PreparationPage({ onStart }: PreparationPageProps) {
                     <button type="button" onClick={() => setEditingPeople(false)} className="text-sm font-medium text-emerald-800 hover:text-emerald-950">Done</button>
                   </div>
                 </div>
-              )}
+              </Collapsible>
             </div>
             {!editingPeople && <button type="button" onClick={() => { if (!interviewees.length) addInterviewee(); setEditingPeople(true) }} className="rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">{completedInterviewees.length ? 'Edit' : '+ Add'}</button>}
           </div>
@@ -237,9 +327,13 @@ export function PreparationPage({ onStart }: PreparationPageProps) {
           <div className="grid grid-cols-[62px_minmax(0,1fr)_auto] items-start gap-2 border-b border-slate-100 px-4 py-3.5 sm:grid-cols-[72px_minmax(0,1fr)_auto] sm:gap-3 sm:px-5">
             <span className="pt-2 text-xs font-semibold tracking-wide text-slate-600 sm:text-sm">TOPICS</span>
             <div className="min-w-0 pt-1">
-              {!editingTopics && (topics.length ? <div className="flex flex-wrap gap-2">{topics.map((topic, index) => <span key={`${topic}-${index}`} className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 sm:text-sm">{topic}</span>)}</div> : <p className="pt-1 text-sm text-slate-500">Add topics you want to keep an eye on</p>)}
-              {editingTopics && <div className="py-1">
-                <TagField id="topics" label="" placeholder="Type a topic and press Enter" hint="" values={topics} onChange={setTopics} />
+              <Collapsible open={!editingTopics}>
+                {topics.length
+                  ? <div className="flex flex-wrap gap-2">{topics.map((topic) => <span key={topic} style={freshTopics.motion(topic)?.style} className={`${freshTopics.motion(topic)?.className ?? ''} rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 sm:text-sm`}>{topic}</span>)}</div>
+                  : <p className="prep-fade pt-1 text-sm text-slate-500">Add topics you want to keep an eye on</p>}
+              </Collapsible>
+              <Collapsible open={editingTopics}><div className="py-1">
+                <TagField id="topics" label="" placeholder="Type a topic and press Enter" hint="" values={topics} onChange={changeTopics} motion={freshTopics.motion} />
                 <div className="mt-3">
                   <p className="mb-2 text-xs font-medium text-slate-700 sm:text-sm">10 common topics <span className="ml-1 text-slate-500">Tap to add</span></p>
                   <div className="flex flex-wrap gap-1.5">
@@ -252,7 +346,7 @@ export function PreparationPage({ onStart }: PreparationPageProps) {
                   </div>
                 </div>
                 <button type="button" onClick={() => setEditingTopics(false)} className="mt-3 text-sm font-medium text-emerald-800 hover:text-emerald-950">Done</button>
-              </div>}
+              </div></Collapsible>
             </div>
             {!editingTopics && <button type="button" onClick={() => setEditingTopics(true)} className="rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Add</button>}
           </div>
@@ -260,11 +354,15 @@ export function PreparationPage({ onStart }: PreparationPageProps) {
           <div className="grid grid-cols-[62px_minmax(0,1fr)_auto] items-start gap-2 px-4 py-3.5 sm:grid-cols-[72px_minmax(0,1fr)_auto] sm:gap-3 sm:px-5">
             <span className="pt-2 text-xs font-semibold tracking-wide text-slate-600 sm:text-sm">NOTES</span>
             <div className="min-w-0 pt-1">
-              {!editingNotes && (notes.filter((note) => note.trim()).length ? <ul className="space-y-2">{notes.filter((note) => note.trim()).map((note, index) => <li key={`${note}-${index}`} className="text-sm leading-6 text-slate-700">{note}</li>)}</ul> : <p className="pt-1 text-sm text-slate-500">Questions, background, or anything useful to remember</p>)}
-              {editingNotes && <div className="space-y-2">
-                {notes.map((note, index) => <div key={index} className="flex items-start gap-2"><textarea value={note} onChange={(event) => setNotes((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} rows={2} placeholder="Add a question, background, or another useful note" className="min-h-12 flex-1 resize-y rounded-md border border-slate-200 px-3 py-2 text-sm leading-6 text-slate-800 outline-none placeholder:text-slate-400 focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15 2xl:text-base" /><button type="button" onClick={() => setNotes((current) => current.filter((_, itemIndex) => itemIndex !== index))} aria-label={`Remove note ${index + 1}`} className="rounded p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-700"><X size={18} /></button></div>)}
+              <Collapsible open={!editingNotes}>
+                {notes.some((note) => note.trim())
+                  ? <ul className="space-y-2">{notes.map((note, index) => note.trim() && <li key={index} style={freshNotes.motion(index)?.style} className={`${freshNotes.motion(index)?.className ?? ''} text-sm leading-6 text-slate-700`}>{note}</li>)}</ul>
+                  : <p className="prep-fade pt-1 text-sm text-slate-500">Questions, background, or anything useful to remember</p>}
+              </Collapsible>
+              <Collapsible open={editingNotes}><div className="space-y-2">
+                {notes.map((note, index) => <div key={index} style={freshNotes.motion(index)?.style} className={`${freshNotes.motion(index)?.className ?? ''} flex items-start gap-2 rounded-md`}><textarea value={note} onChange={(event) => setNotes((current) => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} rows={2} placeholder="Add a question, background, or another useful note" className="min-h-12 flex-1 resize-y rounded-md border border-slate-200 px-3 py-2 text-sm leading-6 text-slate-800 outline-none placeholder:text-slate-400 focus:border-emerald-700 focus:ring-2 focus:ring-emerald-700/15 2xl:text-base" /><button type="button" onClick={() => removeNote(index)} aria-label={`Remove note ${index + 1}`} className="rounded p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-700"><X size={18} /></button></div>)}
                 <div className="flex items-center gap-3"><button type="button" onClick={addNote} className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-white"><Plus size={17} /> Add note</button><button type="button" onClick={() => setEditingNotes(false)} className="text-sm font-medium text-emerald-800 hover:text-emerald-950">Done</button></div>
-              </div>}
+              </div></Collapsible>
             </div>
             {!editingNotes && <button type="button" onClick={() => { if (!notes.length) addNote(); setEditingNotes(true) }} className="rounded-md border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">+ Add</button>}
           </div>

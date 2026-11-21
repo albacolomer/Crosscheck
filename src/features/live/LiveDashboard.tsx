@@ -1,32 +1,117 @@
 import { useEffect, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowLeftRight,
   AudioLines,
   Check,
   CircleCheck,
   Copy,
   ExternalLink,
   LoaderCircle,
+  Mic,
   Pause,
   Square,
   X,
 } from 'lucide-react'
-import type { ClaimCheck } from '../../../shared/types'
-import { demoChecks, demoInterview, demoTranscript, formatTimestamp } from './mock-data'
+import type { ProcessingJob } from '../../../shared/api'
+import type { ClaimCheck, TranscriptSegment } from '../../../shared/types'
+import type { InterviewConnectionStatus } from '../../hooks/useLiveInterview'
+import type { SpeakerCandidate, SpeakerIdentity } from '../../lib/speakers'
+import { AnimatedText } from './AnimatedText'
+import { formatTimestamp } from './mock-data'
+import { SoundToggle } from './SoundToggle'
+import { useVerdictNotifications } from './useVerdictNotifications'
+import { VerdictCounter } from './VerdictCounter'
+import { VerdictToasts } from './VerdictToasts'
+
+export type RecordingStatus = 'idle' | 'connecting' | 'recording' | 'stopping' | 'error'
 
 interface LiveDashboardProps {
+  title: string
+  intervieweeName: string
+  transcript: TranscriptSegment[]
+  speakers: SpeakerIdentity[]
+  speakerCandidates: SpeakerCandidate[]
+  onRenameSpeaker: (label: string, name: string) => void
+  onSwapSpeakers: () => void
+  checks: ClaimCheck[]
+  jobs?: ProcessingJob[]
+  connectionStatus: InterviewConnectionStatus
+  recordingStatus: RecordingStatus
+  error: string | null
+  ending: boolean
+  onStartRecording: () => void
+  onStopRecording: () => void
+  onRetryConnection: () => void
   onEndInterview: () => void
 }
 
-export function LiveDashboard({ onEndInterview }: LiveDashboardProps) {
-  const [checks] = useState(demoChecks)
-  const [alertId, setAlertId] = useState<string | null>('c2')
+const intervieweeStyles = [
+  { dot: 'bg-emerald-600', text: 'text-emerald-800', chip: 'border-emerald-200 bg-emerald-50 text-emerald-900', body: 'text-slate-800' },
+  { dot: 'bg-violet-600', text: 'text-violet-800', chip: 'border-violet-200 bg-violet-50 text-violet-900', body: 'text-slate-800' },
+  { dot: 'bg-amber-600', text: 'text-amber-800', chip: 'border-amber-200 bg-amber-50 text-amber-900', body: 'text-slate-800' },
+]
+const interviewerStyle = { dot: 'bg-sky-600', text: 'text-sky-800', chip: 'border-sky-200 bg-sky-50 text-sky-900', body: 'text-slate-500' }
+const unknownStyle = { dot: 'bg-slate-300', text: 'text-slate-500', chip: 'border-slate-200 bg-slate-50 text-slate-700', body: 'text-slate-700' }
+
+function speakerStyle(speaker: SpeakerIdentity | undefined, speakers: SpeakerIdentity[]) {
+  if (!speaker) return unknownStyle
+  if (speaker.role === 'interviewer') return interviewerStyle
+  const position = speakers.filter(({ role }) => role !== 'interviewer').indexOf(speaker)
+  return intervieweeStyles[Math.max(0, position) % intervieweeStyles.length]
+}
+
+function findClaim(checks: ClaimCheck[], segment: TranscriptSegment) {
+  if (!segment.isFinal) return undefined
+  const text = segment.text.toLocaleLowerCase()
+  return checks.find((check) => check.originalQuote.trim() && text.includes(check.originalQuote.trim().toLocaleLowerCase()))
+}
+
+export function LiveDashboard({
+  title,
+  intervieweeName,
+  transcript: fullTranscript,
+  speakers,
+  speakerCandidates,
+  onRenameSpeaker,
+  onSwapSpeakers,
+  checks,
+  jobs = [],
+  connectionStatus,
+  recordingStatus,
+  error,
+  ending,
+  onStartRecording,
+  onStopRecording,
+  onRetryConnection,
+  onEndInterview,
+}: LiveDashboardProps) {
+  const [alertId, setAlertId] = useState<string | null>(null)
   const [infoId, setInfoId] = useState<string | null>(null)
   const [showAllTranscript, setShowAllTranscript] = useState(true)
   const [copiedText, setCopiedText] = useState<string | null>(null)
-  const [isPaused, setIsPaused] = useState(false)
   const activeAlert = checks.find((check) => check.id === alertId)
-  const transcript = showAllTranscript ? demoTranscript : demoTranscript.slice(-5)
+  const failedExtractions = new Map(jobs.filter((job) => job.kind === 'extraction' && job.status === 'failed' && job.segmentId).map((job) => [job.segmentId, job.error]))
+  const notifications = useVerdictNotifications(checks, connectionStatus)
+  const [handledAlert, setHandledAlert] = useState(0)
+  // A newly wrong claim opens the full centered detail right away (no corner toast).
+  if (notifications.alertRequest && notifications.alertRequest.seq !== handledAlert) {
+    setHandledAlert(notifications.alertRequest.seq)
+    setInfoId(null)
+    setAlertId(notifications.alertRequest.claimId)
+  }
+  const transcript = showAllTranscript ? fullTranscript : fullTranscript.slice(-5)
+  const speakerByLabel = new Map(speakers.map((speaker) => [speaker.label, speaker]))
+  const isRecording = recordingStatus === 'recording' || recordingStatus === 'connecting'
+  const isPaused = !isRecording
+  const canRecord = connectionStatus === 'connected' && !ending
+  const recordingLabel = {
+    idle: 'Not recording',
+    connecting: 'Starting microphone…',
+    recording: 'Recording',
+    stopping: 'Finishing last segment…',
+    error: 'Recording stopped',
+  }[recordingStatus]
 
   useEffect(() => {
     if (!activeAlert) return
@@ -49,6 +134,20 @@ export function LiveDashboard({ onEndInterview }: LiveDashboardProps) {
     }
   }
 
+  // Opens a claim's detail from a notification and brings its segment into view.
+  function openClaim(claimId: string) {
+    const check = checks.find(({ id }) => id === claimId)
+    if (!check) return
+    notifications.dismissClaim(claimId)
+    setShowAllTranscript(true)
+    if (check.status === 'SUPPORTED') setInfoId(claimId)
+    else if (check.status !== 'CHECKING') {
+      setInfoId(null)
+      setAlertId(claimId)
+    }
+    window.requestAnimationFrame(() => notifications.reveal(claimId))
+  }
+
   async function copyText(text: string) {
     try {
       await navigator.clipboard.writeText(text)
@@ -65,49 +164,91 @@ export function LiveDashboard({ onEndInterview }: LiveDashboardProps) {
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="flex min-h-[84px] items-center justify-between gap-5 px-6 sm:px-8 2xl:min-h-[100px] 2xl:px-10">
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl 2xl:text-3xl">Interview: {demoInterview.title}</h1>
+            <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl 2xl:text-3xl">Interview: {title}</h1>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs sm:text-sm">
-              <span className="inline-flex items-center gap-1.5 font-semibold text-red-700"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-600" /> Recording</span>
-              <span className="text-slate-500">{isPaused ? 'Transcription paused' : 'Transcribing in English'}</span>
-              <span className="rounded bg-slate-100 px-2 py-1 text-[10px] font-medium text-slate-500 sm:text-xs">Demo · sample statements</span>
+              <span className={`inline-flex items-center gap-1.5 font-semibold ${recordingStatus === 'recording' ? 'text-red-700' : 'text-slate-500'}`}><span className={`h-1.5 w-1.5 rounded-full ${recordingStatus === 'recording' ? 'animate-pulse bg-red-600' : 'bg-slate-400'}`} /> {recordingLabel}</span>
+              <span className="text-slate-500">{connectionStatus === 'creating' ? 'Creating interview…' : connectionStatus === 'connecting' ? 'Connecting…' : connectionStatus === 'reconnecting' ? 'Reconnecting…' : connectionStatus === 'error' ? 'Backend unavailable' : isPaused ? 'Transcription paused' : 'Transcribing'}</span>
             </div>
           </div>
-          <button onClick={onEndInterview} className="inline-flex shrink-0 items-center gap-2.5 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-[0_3px_10px_rgba(220,38,38,0.22)] transition hover:bg-red-700 sm:px-5 sm:text-base 2xl:px-6 2xl:py-3.5">
-            <Square size={16} fill="currentColor" /> <span className="hidden sm:inline">Stop recording</span><span className="sm:hidden">Stop</span><span className="border-l border-white/30 pl-2 font-mono tabular-nums">02:43</span>
+          <div className="ml-auto hidden sm:block"><VerdictCounter checks={checks} onReveal={notifications.reveal} /></div>
+          <button onClick={onEndInterview} disabled={ending || connectionStatus === 'creating'} className="inline-flex shrink-0 items-center gap-2.5 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-[0_3px_10px_rgba(220,38,38,0.22)] transition hover:bg-red-700 disabled:opacity-60 sm:px-5 sm:text-base 2xl:px-6 2xl:py-3.5">
+            {ending ? <LoaderCircle size={16} className="animate-spin" /> : <Square size={16} fill="currentColor" />} <span className="hidden sm:inline">{ending ? 'Ending…' : 'End interview'}</span><span className="sm:hidden">End</span>
           </button>
         </div>
       </header>
 
       <section className="mx-auto w-full max-w-[960px] px-6 pb-16 pt-14 sm:px-8 sm:pt-16 2xl:max-w-[1120px] 2xl:px-10 2xl:pt-20">
+        {error && (
+          <div role="alert" className="mb-5 flex items-start gap-2.5 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+            <span className="flex-1">{error}</span>
+            {connectionStatus === 'error' && <button onClick={onRetryConnection} className="font-semibold underline underline-offset-2">Retry</button>}
+          </div>
+        )}
+        {!fullTranscript.length && (
+          <div className="flex flex-col items-center py-16 text-center">
+            {isRecording ? (
+              <p className="text-base text-slate-500 sm:text-lg">{recordingStatus === 'connecting' ? 'Starting microphone…' : 'Listening for speech…'}</p>
+            ) : (
+              <>
+                <button onClick={onStartRecording} disabled={!canRecord || recordingStatus === 'stopping'} className="inline-flex items-center gap-2.5 rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white shadow-[0_3px_10px_rgba(220,38,38,0.22)] transition hover:bg-red-700 disabled:opacity-50 sm:text-base 2xl:px-6 2xl:py-3.5"><Mic size={18} /> Start recording</button>
+                <p className="mt-3 text-sm text-slate-500 sm:text-base">{canRecord ? 'The transcript will appear here.' : 'Waiting for the backend…'}</p>
+              </>
+            )}
+          </div>
+        )}
+        {speakers.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center gap-2.5 text-xs sm:text-sm">
+            <span className="text-xs font-semibold uppercase tracking-[0.09em] text-slate-400 sm:text-sm">Voices</span>
+            {speakers.map((speaker) => {
+              const style = speakerStyle(speaker, speakers)
+              const options = [...new Set([...speakerCandidates.map(({ name }) => name), speaker.name, speaker.label])]
+              return (
+                <label key={speaker.label} title={`Detected as ${speaker.label}`} className={`inline-flex items-center gap-2 rounded-full border py-1 pl-3 pr-1.5 ${style.chip}`}>
+                  <span className={`h-2 w-2 rounded-full ${style.dot}`} />
+                  <select value={speaker.name} onChange={(event) => onRenameSpeaker(speaker.label, event.target.value)} aria-label={`Name for ${speaker.label}`} className="max-w-[220px] cursor-pointer truncate bg-transparent font-semibold outline-none">
+                    {options.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                </label>
+              )
+            })}
+            {speakers.length === 2 && <button onClick={onSwapSpeakers} className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800 sm:text-sm"><ArrowLeftRight size={16} /> Swap</button>}
+          </div>
+        )}
         <div className="space-y-2">
           {transcript.map((segment) => {
-            const claim = checks.find((check) => check.originalQuote === segment.text)
-            const isInterviewer = segment.speaker === 'Journalist'
+            const claim = findClaim(checks, segment)
+            const speaker = segment.speaker ? speakerByLabel.get(segment.speaker.trim()) : undefined
+            const style = speakerStyle(speaker, speakers)
             const isInfoOpen = claim?.id === infoId
             return (
-            <article key={segment.id} className="relative py-4 sm:py-5 2xl:py-6">
-                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.09em] text-slate-500 sm:text-sm">
-                  {isInterviewer ? 'INTERVIEWER' : 'INTERVIEWEE'} <span className="px-1 text-slate-300">·</span> {formatTimestamp(segment.timestampMs)}
+              <article key={segment.id} className="live-segment-enter relative py-4 sm:py-5 2xl:py-6">
+                <div className="mb-2 flex items-center text-xs font-semibold uppercase tracking-[0.09em] text-slate-500 sm:text-sm">
+                  <span className={`mr-2 h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
+                  <span className={style.text}>{speaker?.name ?? 'Speaker'}</span> <span className="px-1 text-slate-300">·</span> {formatTimestamp(segment.timestampMs)}
                   {!segment.isFinal && <span className="ml-2 normal-case tracking-normal text-slate-400">Transcribing…</span>}
+                  {failedExtractions.has(segment.id) && <span title={failedExtractions.get(segment.id) ?? undefined} className="ml-2 inline-flex items-center gap-1.5 normal-case tracking-normal text-rose-600"><AlertTriangle size={14} />Claim detection failed</span>}
                 </div>
 
                 {claim ? (
-                  <div className="relative">
-                    <span className={`text-lg leading-[1.75] sm:text-xl 2xl:text-[26px] ${claim.status === 'CHECKING' ? 'text-slate-500' : 'text-slate-900'}`}>
-                      <span className={claimUnderline(claim.status)}>{segment.text}</span>
+                  <div data-claim-id={claim.id} data-claim-status={claim.status} className={`relative scroll-mt-28 ${notifications.isFlashing(claim.id) ? 'verdict-flash' : ''}`}>
+                    <span className={`text-lg leading-[1.75] sm:text-xl 2xl:text-[26px] transition-colors duration-300 ${claim.status === 'CHECKING' ? 'text-slate-500' : 'text-slate-900'}`}>
+                      <span className={claimUnderline(claim.status)}><AnimatedText id={segment.id} text={segment.text} /></span>
                       {' '}
-                      <ClaimStatusButton
-                        check={claim}
-                        infoOpen={isInfoOpen}
-                        onClick={() => selectClaim(claim)}
-                      />
+                      <span key={claim.status} className="live-badge-enter">
+                        <ClaimStatusButton
+                          check={claim}
+                          infoOpen={isInfoOpen}
+                          onClick={() => selectClaim(claim)}
+                        />
+                      </span>
                     </span>
                     {isInfoOpen && claim.status === 'SUPPORTED' && (
                       <ClaimInfoPopover check={claim} copiedText={copiedText} onCopy={copyText} onClose={() => setInfoId(null)} />
                     )}
                   </div>
                 ) : (
-                  <p className="text-lg leading-[1.75] text-slate-700 sm:text-xl 2xl:text-[26px]">{segment.text}</p>
+                  <p className={`text-lg leading-[1.75] sm:text-xl 2xl:text-[26px] ${style.body}`}><AnimatedText id={segment.id} text={segment.text} /></p>
                 )}
               </article>
             )
@@ -120,7 +261,7 @@ export function LiveDashboard({ onEndInterview }: LiveDashboardProps) {
       </section>
 
       <footer className="fixed bottom-0 left-0 right-0 z-30 flex h-14 items-center justify-between border-t border-slate-200 bg-white px-6 sm:px-8 2xl:h-16 2xl:px-10">
-        <div className="flex items-center gap-2.5 text-xs font-semibold text-slate-600 sm:text-sm"><AudioLines size={22} className="text-slate-700" /><span>{isPaused ? 'Paused' : 'Listening…'}</span><button onClick={() => setIsPaused((paused) => !paused)} aria-label={isPaused ? 'Resume transcription' : 'Pause transcription'} className="ml-1 rounded p-1.5 text-slate-400 hover:bg-slate-100"><Pause size={17} /></button></div>
+        <div className="flex items-center gap-2.5 text-xs font-semibold text-slate-600 sm:text-sm"><AudioLines size={22} className="text-slate-700" /><span>{isPaused ? 'Paused' : 'Listening…'}</span>{isRecording ? <button onClick={onStopRecording} aria-label="Pause transcription" className="ml-1 rounded p-1.5 text-slate-400 hover:bg-slate-100"><Pause size={17} /></button> : <button onClick={onStartRecording} disabled={!canRecord || recordingStatus === 'stopping'} aria-label="Start recording" className="ml-1 inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-red-700 hover:bg-red-50 disabled:opacity-50"><Mic size={17} />{fullTranscript.length ? 'Resume' : 'Start recording'}</button>}<SoundToggle enabled={notifications.soundEnabled} onChange={notifications.setSoundEnabled} /></div>
         <div className="flex items-center gap-4 text-xs text-slate-500 sm:gap-6 sm:text-sm">
           <span className="inline-flex items-center gap-2"><span className="w-5 border-b-2 border-dotted border-slate-400" /><span className="hidden sm:inline">Checking</span><span className="sm:hidden">Check</span></span>
           <span className="inline-flex items-center gap-2"><span className="w-5 border-b-2 border-emerald-600" />Correct</span>
@@ -128,7 +269,8 @@ export function LiveDashboard({ onEndInterview }: LiveDashboardProps) {
         </div>
       </footer>
 
-      {activeAlert && <FactAlertModal key={activeAlert.id} check={activeAlert} copiedText={copiedText} onCopy={copyText} onDismiss={() => setAlertId(null)} />}
+      <VerdictToasts toasts={notifications.toasts} copiedText={copiedText} onDismiss={notifications.dismiss} onView={openClaim} onCopy={copyText} />
+      {activeAlert && <FactAlertModal key={activeAlert.id} check={activeAlert} intervieweeName={intervieweeName} copiedText={copiedText} onCopy={copyText} onDismiss={() => setAlertId(null)} />}
     </main>
   )
 }
@@ -163,7 +305,7 @@ function ClaimInfoPopover({ check, copiedText, onCopy, onClose }: { check: Claim
   ]
 
   return (
-    <div className="absolute left-0 top-full z-20 mt-3 w-[min(460px,calc(100vw-3rem))] rounded-xl border border-slate-200 bg-white shadow-[0_16px_45px_rgba(15,23,42,0.16)] 2xl:w-[520px]" onClick={(event) => event.stopPropagation()}>
+    <div className="live-card-enter absolute left-0 top-full z-20 mt-3 w-[min(460px,calc(100vw-3rem))] rounded-xl border border-slate-200 bg-white shadow-[0_16px_45px_rgba(15,23,42,0.16)] 2xl:w-[520px]" onClick={(event) => event.stopPropagation()}>
       <div className="flex items-center gap-2.5 px-5 pt-4">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800"><Check size={15} />Correct</span>
         <span className="text-xs text-slate-500">with context</span>
@@ -185,18 +327,18 @@ function ClaimInfoPopover({ check, copiedText, onCopy, onClose }: { check: Claim
   )
 }
 
-function FactAlertModal({ check, copiedText, onCopy, onDismiss }: { check: ClaimCheck; copiedText: string | null; onCopy: (text: string) => void; onDismiss: () => void }) {
+function FactAlertModal({ check, intervieweeName, copiedText, onCopy, onDismiss }: { check: ClaimCheck; intervieweeName: string; copiedText: string | null; onCopy: (text: string) => void; onDismiss: () => void }) {
   const isFalse = check.status === 'CONTRADICTED'
   const isRedAlert = isFalse || check.status === 'MISLEADING'
   const statusLabel = isFalse ? 'False' : check.status === 'MISLEADING' ? 'Misleading' : 'Uncertain'
   const firstQuestion = check.suggestedQuestions[0]?.text
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] sm:p-6 2xl:p-10" onMouseDown={(event) => { if (event.currentTarget === event.target) onDismiss() }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="fact-alert-title" className="max-h-[94vh] w-full max-w-[780px] overflow-y-auto rounded-2xl bg-white shadow-[0_24px_80px_rgba(0,0,0,0.28)] 2xl:max-w-[900px]" onMouseDown={(event) => event.stopPropagation()}>
+    <div className="live-fade-enter fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] sm:p-6 2xl:p-10" onMouseDown={(event) => { if (event.currentTarget === event.target) onDismiss() }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="fact-alert-title" className="live-card-enter max-h-[94vh] w-full max-w-[780px] overflow-y-auto rounded-2xl bg-white shadow-[0_24px_80px_rgba(0,0,0,0.28)] 2xl:max-w-[900px]" onMouseDown={(event) => event.stopPropagation()}>
         <div className="flex items-center gap-4 px-6 pt-6 sm:px-8 2xl:px-9 2xl:pt-8">
           <span className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-extrabold text-white ${isRedAlert ? 'bg-red-600' : 'bg-amber-600'}`}><X size={17} />{statusLabel}</span>
-          <span className="text-sm font-medium text-slate-600 sm:text-base">{demoInterview.intervieweeName} · {formatTimestamp(check.timestampMs)}</span>
+          <span className="text-sm font-medium text-slate-600 sm:text-base">{intervieweeName} · {formatTimestamp(check.timestampMs)}</span>
           <button onClick={onDismiss} aria-label="Close fact alert" className="ml-auto rounded-xl border border-slate-200 p-2.5 text-slate-600 hover:bg-slate-50"><X size={20} /></button>
         </div>
 
