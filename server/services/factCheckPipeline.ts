@@ -32,6 +32,9 @@ import {
   type WebSearchOptions,
 } from './pipeline/contracts.ts'
 import { createOpenAIStructuredGenerator } from './pipeline/openaiProvider.ts'
+import { createClaimExtractor } from './claimExtractor.ts'
+import { createEvidenceAnalyzer } from './evidenceAnalyzer.ts'
+import { createWebSearch } from './webSearch.ts'
 
 /** Default analysis model when OPENAI_ANALYSIS_MODEL is unset. Listed in openai@7.62 `ChatModel`. */
 export const DEFAULT_ANALYSIS_MODEL = 'gpt-5.4-mini'
@@ -75,8 +78,8 @@ function throwIfAborted(signal?: AbortSignal) {
 }
 
 // ---------------------------------------------------------------------------
-// Composition point (P4-F). The real P4-A/B/C factories are injected here at integration;
-// this module deliberately does not import claimExtractor, webSearch or evidenceAnalyzer.
+// Composition point (P4-F). `createFactCheckPipeline` and `createPipelineFromEnv` stay
+// injectable; only the default export below binds the real P4-A/B/C factories.
 
 export interface PipelineFactories {
   createClaimExtractor(options: { generate: StructuredGenerate }): ExtractClaims
@@ -102,3 +105,16 @@ export function createPipelineFromEnv(env: PipelineEnv, factories: PipelineFacto
     analyzeEvidence: factories.createEvidenceAnalyzer({ generate }),
   })
 }
+
+/**
+ * P4-F — the real pipeline loaded by the backend through `AI_PIPELINE_MODULE`.
+ * Evaluated on dynamic import, after `server/index.ts` has loaded `dotenv/config`.
+ * Empty keys never prevent startup: each affected call rejects with PipelineError('CONFIGURATION').
+ */
+const pipeline: AiPipeline = createPipelineFromEnv(process.env, {
+  createClaimExtractor,
+  createWebSearch,
+  createEvidenceAnalyzer,
+})
+
+export default pipeline
