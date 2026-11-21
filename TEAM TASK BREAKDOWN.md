@@ -59,7 +59,7 @@ Every person uses the same project dependencies; there are no per-role global pa
 From PowerShell, each person clones the team's repository once, then prepares their local checkout:
 
 ```powershell
-git clone <URL_DEL_REPOSITORIO>
+git clone <REPOSITORY_URL>
 cd Crosscheck
 npm ci
 if (!(Test-Path .env)) { Copy-Item .env.example .env }

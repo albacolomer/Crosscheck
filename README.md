@@ -1,62 +1,66 @@
 # Crosscheck
 
-Copiloto de investigación para periodistas durante entrevistas. Stack: React + Vite + TypeScript + Tailwind CSS y shadcn/ui en el cliente; Node.js + Express en el servidor. Monorepo sencillo, contratos TypeScript compartidos y estado temporal en memoria.
+Crosscheck is a research copilot for journalists conducting interviews. The React frontend uses Vite, TypeScript, Tailwind CSS, and shadcn/ui. The backend uses Node.js and Express. Both live in one repository, share TypeScript contracts, and keep session state in memory.
 
-## Preparar el PC de cada integrante
+## Local Setup
 
-Instala Node.js 22.12 o posterior (incluye npm), Git y un editor de TypeScript, por ejemplo VS Code. No hace falta instalar React, Vite, Tailwind, Express ni shadcn/ui globalmente: `npm ci` instala las versiones locales fijadas en `package-lock.json`.
+Install Node.js 22.12 or later (which includes npm), Git, and a TypeScript editor such as VS Code. `npm ci` installs the project dependencies at the versions pinned in `package-lock.json`.
 
-En PowerShell, clona el repositorio y prepara la copia local:
+In PowerShell, clone the repository and prepare your local copy.
 
 ```powershell
-git clone <URL_DEL_REPOSITORIO>
+git clone <REPOSITORY_URL>
 cd Crosscheck
 npm ci
 if (!(Test-Path .env)) { Copy-Item .env.example .env }
 ```
 
-Si el repo ya está clonado, omite `git clone` y `cd`. El formulario y la UI con datos de ejemplo no requieren claves API. Quienes ejecuten la integración de IA necesitan acceso a las claves de OpenAI y Tavily; el PC de demo necesita ambas. Añádelas solo en `.env` como `OPENAI_API_KEY` y `TAVILY_API_KEY`. No las escribas en código ni variables `VITE_*`, no las compartas por Git y no envíes el archivo `.env` al equipo. El equipo debe compartir credenciales mediante un canal seguro.
+If the repository is already cloned, skip `git clone` and `cd`. The form and UI can use mock data without API keys. Anyone running the AI integration, including the demo operator, needs OpenAI and Tavily keys. Put them in `.env` as `OPENAI_API_KEY` and `TAVILY_API_KEY`. Share credentials with the team through a secure channel. Keep them out of source code, Git, and `VITE_*` variables.
 
-Arranca frontend y backend juntos:
+Start the frontend and backend together.
 
 ```powershell
 npm run dev
 ```
 
-Frontend: `http://localhost:5173`. Backend: `http://localhost:3001`. Comprueba `http://localhost:3001/api/health`; debe responder `{"status":"ok","service":"crosscheck-api"}`. Cuando pruebes la captura de audio, permite el micrófono en el navegador.
+The frontend runs at `http://localhost:5173` and the backend at `http://localhost:3001`. The health endpoint at `http://localhost:3001/api/health` returns `{"status":"ok","service":"crosscheck-api"}`. Allow microphone access in your browser when trying audio capture.
 
-### Instrucciones para Codex
+### Codex Setup Instructions
 
-Al leer este README en la copia de trabajo, Codex debe comprobar si Node.js/npm y Git están disponibles, instalar las dependencias del proyecto con `npm ci`, crear `.env` desde `.env.example` solo si todavía no existe, y dejar `npm run dev` iniciado para que el equipo pueda trabajar. Puede ejecutar `npm run build` para comprobar los cambios. No debe sobrescribir `.env`, inventar claves ni incluir secretos en código o commits. Si falta una herramienta global, o hacen falta credenciales, debe indicar exactamente qué falta y quién del equipo debe proporcionarlo de forma segura.
+When Codex reads this README in the working copy, it should check that Node.js, npm, and Git are available, install project dependencies with `npm ci`, create `.env` from `.env.example` if needed, and start `npm run dev` so the team can work. It can run `npm run build` to check changes. Preserve any existing `.env` and keep secrets out of code and commits. If a global tool or credential is missing, identify it and explain how the team can provide it securely.
 
-## Arquitectura de carpetas
+## Project Structure
+
+Add directories as their features need them.
 
 ```text
-src/                    Interfaz React
-  components/           Componentes reutilizables (por crear)
-  features/              preparation/, live/, insights/ (por crear)
-  lib/                   Cliente API y utilidades
-shared/types.ts          Contratos compartidos frontend/backend
-server/index.ts          API Express y rutas del servidor
-server/routes/            Endpoints (por crear)
-server/services/          OpenAI, Tavily y pipeline (por crear)
-.env.example             Nombres de configuración, sin secretos
+src/                    React frontend
+  pages/                Preparation, live dashboard, and results
+  components/           Feature components and shadcn/ui primitives
+  hooks/                Reusable React state and side effects
+  services/             Browser API, audio, and streaming clients
+  lib/                  Pure utilities
+shared/types.ts         Shared frontend and backend contracts
+server/index.ts         Express entry point and server routes
+server/routes/          API endpoints
+server/services/        OpenAI, Tavily, and the fact-checking pipeline
+.env.example            Configuration names with empty credential values
 ```
 
-## Reparto para empezar
+## Getting Started by Role
 
-1. **Persona 1 — Preparación e insights:** implementar formulario y vista final. Usar `InterviewContext` de `shared/types.ts`. No necesita claves API para trabajar en UI con datos simulados.
-2. **Persona 2 — Dashboard en directo:** construir transcripción, verificaciones y preguntas con `TranscriptSegment` y `ClaimCheck`. No necesita claves API para UI con datos simulados.
-3. **Persona 3 — Audio:** integrar captura de micrófono y transcripción Realtime; emitir segmentos finales sin bloquear el audio. Necesita permiso de micrófono en su navegador. La clave OpenAI va solo en el backend de integración local si desarrolla/ejecuta allí ese servicio.
-4. **Persona 4 — Pipeline:** implementar extracción, búsqueda Tavily, evaluación y preguntas usando los tipos compartidos. Necesita claves OpenAI y Tavily en el `.env` del backend local.
-5. **Persona 5 — Backend e integración:** crear rutas REST/WebSocket y estado en memoria; mantener `npm run dev` operativo. El PC integrador necesita las claves necesarias para los servicios conectados.
+1. **Person 1 — Preparation and insights.** Build the form and final view using `InterviewContext` from `shared/types.ts`. Use mock data while working on the UI.
+2. **Person 2 — Live dashboard.** Build the transcript, fact checks, and questions using `TranscriptSegment` and `ClaimCheck`. Use mock data while working on the UI.
+3. **Person 3 — Audio.** Integrate microphone capture and Realtime transcription. Emit final segments while audio capture continues. Grant browser microphone access and keep the OpenAI key in the local backend if you run the transcription service.
+4. **Person 4 — Pipeline.** Implement extraction, Tavily search, evidence evaluation, and questions using the shared types. Add the OpenAI and Tavily keys to the local backend's `.env`.
+5. **Person 5 — Backend and integration.** Build the REST and WebSocket routes and manage in-memory state. Keep `npm run dev` working and configure keys for the services on the integration machine.
 
-Todos los PCs usan las mismas dependencias con `npm ci`; no hay instalaciones distintas por rol. Antes de cambiar `shared/types.ts` o nombres de eventos, acordad el cambio con el equipo. Usad ramas cortas y commits frecuentes.
+Everyone installs the same dependencies with `npm ci`. Coordinate with the team before changing `shared/types.ts` or event names. Use short-lived branches and commit frequently.
 
-## Flujo de ramas
+## Branch Workflow
 
-- `main`: versión integrada y lista para la demo.
-- Una rama corta por tarea, por ejemplo `feat/live-dashboard` o `feat/tavily-checks`.
-- No confirmar `.env`, audio de entrevistas ni datos personales reales.
+- Keep `main` integrated and ready for the demo.
+- Use a short-lived branch for each task, such as `feat/live-dashboard` or `feat/tavily-checks`.
+- Keep `.env`, interview audio, and real personal data outside Git.
 
-El alcance y los hitos están en [PLAN.md](./PLAN.md). El desglose del equipo está en [TEAM TASK BREAKDOWN.md](./TEAM%20TASK%20BREAKDOWN.md).
+See the [implementation plan](./PLAN.md) for scope and milestones and the [team task breakdown](./TEAM%20TASK%20BREAKDOWN.md) for assignments.

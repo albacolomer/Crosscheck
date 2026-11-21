@@ -1,167 +1,167 @@
-# Crosscheck — Plan de implementación
+# Crosscheck — Implementation Plan
 
-## Objetivo
+## Objective
 
-Construir en una hackathon de cuatro horas un copiloto de investigación para periodistas. Durante una entrevista, la aplicación transcribe el audio, identifica afirmaciones factuales, busca evidencia fiable y propone preguntas para profundizar. Al terminar, presenta los hallazgos principales.
+Build a research copilot for journalists in a four-hour hackathon. During an interview, the app transcribes audio, identifies factual claims, searches for reliable evidence, and suggests follow-up questions. When the interview ends, it presents the key findings.
 
-La prioridad es un recorrido funcional de principio a fin. La transcripción y la verificación son el núcleo; mantener la entrevista en marcha tiene prioridad sobre añadir funciones secundarias.
+Prioritize a working flow from preparation to results. Live transcription and claim verification come first. The interview should keep running while checks are in progress.
 
-## Alcance y tiempo
+## Scope and Timeline
 
-- Equipo de cinco personas.
-- Tres horas para desarrollo e integración.
-- Última hora reservada para pruebas, pulido y preparación de la demo.
-- Sin autenticación, base de datos ni almacenamiento persistente. El estado vive en memoria.
-- No añadir infraestructura ni dependencias salvo que sean necesarias para completar el recorrido.
+- Five people.
+- Three hours for development and integration.
+- One final hour for rehearsal, polish, and demo preparation.
+- Keep state in memory for the MVP. Authentication, a database, and persistent storage are out of scope.
+- Add infrastructure or dependencies only when needed to complete the interview flow.
 
-## Stack acordado
+## Agreed Stack
 
-| Capa | Tecnología |
+| Layer | Technology |
 | --- | --- |
-| Frontend | React, Vite, TypeScript, Tailwind CSS y shadcn/ui |
-| Backend | Node.js y Express |
-| Transcripción | OpenAI Realtime API |
-| Análisis | OpenAI API |
-| Búsqueda web | Tavily Search API |
-| Estado | React state o Context en frontend; memoria en backend |
+| Frontend | React, Vite, TypeScript, Tailwind CSS, and shadcn/ui |
+| Backend | Node.js and Express |
+| Transcription | OpenAI Realtime API |
+| Analysis | OpenAI API |
+| Web search | Tavily Search API |
+| State | React state or Context in the frontend, and in-memory state in the backend |
 
-Las claves de API permanecen en el backend y se configuran mediante variables de entorno.
+Configure API keys through environment variables on the backend.
 
-## Experiencia del producto
+## Product Flow
 
-### 1. Preparación
+### 1. Preparation
 
-Formulario breve con título de la entrevista, nombre y rol/organización de la persona entrevistada, información de contexto, temas a investigar y preguntas o enfoques clave. Todo este contexto debe llegar al flujo de análisis. Acción principal: **Iniciar entrevista**.
+Use a short form to collect the interview title, interviewee name and role or organization, background, topics to investigate, and key questions or angles. Pass this context to the analysis pipeline. The primary action is **Start Interview**.
 
-### 2. Entrevista en directo
+### 2. Live Interview
 
-Al iniciar, solicitar permiso para el micrófono, capturar audio y transmitirlo para obtener transcripción progresiva. El panel en directo tendrá tres áreas:
+When the interview starts, request microphone permission and stream captured audio for live transcription. The dashboard has three areas.
 
-- **Transcripción:** conversación reciente visible, afirmaciones detectadas resaltadas y separación de hablantes cuando sea posible.
-- **Verificación:** una tarjeta por afirmación relevante con afirmación original, estado, explicación breve, evidencia a favor o en contra, enlaces a las fuentes y nivel de confianza.
-- **Preguntas sugeridas:** preguntas concisas vinculadas a la afirmación, clasificadas como desafío, seguimiento o contexto, con botón para copiar.
+- **Transcript** shows recent conversation, highlights detected claims, and separates speakers when possible.
+- **Fact checks** show one card per relevant claim with the original wording, verdict, short explanation, supporting or contradicting evidence, source links, and confidence.
+- **Suggested questions** show concise questions linked to each claim. Label them as challenge, follow-up, or context and provide a copy button.
 
-Estados de verificación: `SUPPORTED`, `CONTRADICTED`, `MISLEADING` y `UNVERIFIED`. La falta de evidencia se presenta como `UNVERIFIED`, nunca como falsedad. Mostrar estados de carga y error.
+Use `SUPPORTED`, `CONTRADICTED`, `MISLEADING`, and `UNVERIFIED` as verdicts. Show `UNVERIFIED` when evidence is insufficient. Include loading and error states.
 
-La transcripción no debe esperar a la extracción, búsqueda o análisis. Procesar afirmaciones de forma asíncrona, descartar duplicados e ignorar opiniones, retórica y muletillas. Buscar tanto evidencia que respalde como que contradiga; priorizar fuentes primarias y fiables. No inventar fuentes, cifras ni URL.
+Keep transcription running while claim extraction, search, and analysis happen asynchronously. Deduplicate claims and filter out opinions, rhetoric, and filler. Search for supporting and contradicting evidence and prioritize reliable primary sources. Use only sources, figures, and URLs found in the evidence.
 
-### 3. Insights al finalizar
+### 3. Interview Insights
 
-Al pulsar **Terminar entrevista**, mostrar tarjetas KPI con el total de afirmaciones y recuentos por estado. Incluir hallazgos clave: declaraciones más controvertidas, contradicciones importantes, afirmaciones que requieren investigación adicional, preguntas sin responder y conclusiones principales. Mantenerlo en listas claras; sin gráficos complejos.
+When the user selects **End Interview**, show the total number of claims and the count for each verdict. Highlight controversial statements, significant contradictions, claims that need more research, unanswered questions, and key takeaways. Use short lists and count cards.
 
-## Flujo técnico
+## Technical Flow
 
 ```text
-Preparación y contexto ───────────────────────────────────────────┐
-                                                                  v
-Micrófono -> OpenAI Realtime -> transcripción -> extracción de afirmaciones
-                                             -> cola asíncrona (sin bloquear audio)
-                                             -> Tavily (evidencia a favor y en contra)
-                                             -> análisis OpenAI (veredicto y preguntas)
-                                             -> dashboard en directo -> insights finales
+Preparation and context ─────────────────────┐
+                                             v
+Microphone -> OpenAI Realtime -> transcript -> claim extraction
+                                            -> async verification queue
+                                            -> Tavily (supporting and contradicting evidence)
+                                            -> OpenAI analysis (verdict and questions)
+                                            -> live dashboard -> final insights
 ```
 
-Usar respuestas estructuradas para extracción y verificación. Mantener contratos TypeScript compartidos entre frontend y backend. Los enlaces mostrados deben proceder de resultados reales de búsqueda. Si no se encuentran pruebas fiables, devolver `UNVERIFIED`. El flujo debe tolerar errores de una verificación sin detener la transcripción.
+Use structured outputs for extraction and verification. Share TypeScript contracts between the frontend and backend. Links must come from actual search results. Return `UNVERIFIED` when reliable evidence is unavailable. A failed fact check must leave transcription running.
 
-## Contratos mínimos
+## Minimum Contracts
 
-- **Contexto de entrevista:** título, entrevistado, rol/organización, antecedentes, temas y preguntas/enfoques.
-- **Segmento de transcripción:** identificador, texto, estado final/provisional y hablante opcional.
-- **Afirmación:** identificador, cita original, afirmación normalizada, categoría/contexto e importancia.
-- **Verificación:** identificador de afirmación, estado, explicación, confianza, evidencias y preguntas sugeridas.
-- **Evidencia:** título, URL, resumen y postura (`supporting` o `contradicting`).
-- **Resumen:** estadísticas calculadas a partir de verificaciones y listas de hallazgos.
+- **Interview context** contains the title, interviewee, role or organization, background, topics, and key questions or angles.
+- **Transcript segment** contains an ID, text, a final or partial status, and an optional speaker.
+- **Claim** contains an ID, original quote, normalized claim, category or context, and priority.
+- **Fact check** contains the claim ID, verdict, explanation, confidence, evidence, and suggested questions.
+- **Evidence** contains a title, URL, summary, and stance (`supporting` or `contradicting`).
+- **Summary** contains counts calculated from fact checks and lists of findings.
 
-Definir los tipos y eventos compartidos al inicio para que los módulos puedan integrarse en paralelo.
+Agree on shared types and events early so the modules can be built in parallel.
 
-## Prioridades
+## Priorities
 
-### P0 — Imprescindible
+### P0 — Essential
 
-1. Captura de micrófono.
-2. Transcripción en tiempo real.
-3. Extracción de afirmaciones factuales.
-4. Búsqueda web mediante Tavily.
-5. Verificación basada en evidencia.
-6. Actualizaciones del dashboard en directo.
+1. Microphone capture.
+2. Live transcription.
+3. Factual claim extraction.
+4. Web search through Tavily.
+5. Evidence-based verification.
+6. Live dashboard updates.
 
-### P1 — Importante
+### P1 — Important
 
-1. Pantalla para preparar la entrevista.
-2. Preguntas de seguimiento sugeridas.
-3. Contexto de entrevista integrado en el análisis.
-4. Resumen al finalizar.
+1. Interview preparation screen.
+2. Suggested follow-up questions.
+3. Interview context in the analysis.
+4. Final summary.
 
-### P2 — Solo si P0 y P1 funcionan
+### P2 — After P0 and P1 Work
 
-Identificación de hablantes, estadísticas avanzadas, animaciones, historial persistente y exportación.
+Speaker identification, advanced statistics, animations, persistent history, and export.
 
-## Reparto de trabajo
+## Team Assignments
 
-| Persona | Área | Entrega e integración |
+| Person | Area | Deliverable |
 | --- | --- | --- |
-| 1 | Preparación y cierre | Formulario de contexto e insights finales |
-| 2 | Dashboard en directo | Transcripción, tarjetas de verificación y preguntas |
-| 3 | Audio | Captura de micrófono e integración con Realtime |
-| 4 | Análisis | Extracción, Tavily, evidencia y preguntas sugeridas |
-| 5 | Backend e integración | Express, contratos, estado en memoria y conexión de módulos |
+| 1 | Preparation and results | Context form and final insights |
+| 2 | Live dashboard | Transcript, fact-check cards, and questions |
+| 3 | Audio | Microphone capture and Realtime integration |
+| 4 | Analysis | Claim extraction, Tavily, evidence, and suggested questions |
+| 5 | Backend and integration | Express, contracts, in-memory state, and module integration |
 
-Todo el equipo acuerda primero los tipos de datos y los eventos de integración. No reescribir código que ya funciona.
+Agree on shared types and integration events before building the modules. Reuse working code.
 
-## Secuencia de trabajo
+## Work Schedule
 
-### 0:00–0:30 — Base compartida
+### 0:00–0:30 — Shared Foundation
 
-- Confirmar el contrato de datos y las interfaces entre módulos.
-- Preparar la aplicación y el backend con el stack acordado.
-- Comprobar credenciales y una llamada mínima a los servicios externos.
-- Acordar variables de entorno; no incluir claves en el frontend.
+- Confirm the data contracts and module interfaces.
+- Set up the application and backend with the agreed stack.
+- Confirm credentials and make a minimal call to each external service.
+- Agree on environment variables and keep API keys on the backend.
 
-### 0:30–1:30 — Camino de verificación
+### 0:30–1:30 — Verification Flow
 
-- Implementar extracción de afirmaciones y deduplicación.
-- Conectar búsqueda de Tavily y análisis de evidencia.
-- Mostrar una tarjeta con estado, fuentes y preguntas.
-- Mantener la transcripción independiente del trabajo asíncrono de verificación.
+- Implement claim extraction and deduplication.
+- Connect Tavily search and evidence analysis.
+- Show a card with a verdict, sources, and suggested questions.
+- Keep transcription independent of asynchronous verification.
 
-### 1:30–2:30 — Audio y pantallas
+### 1:30–2:30 — Audio and Screens
 
-- Integrar captura y transcripción progresiva.
-- Conectar la pantalla de preparación y pasar su contexto.
-- Integrar las tres áreas del dashboard.
-- Añadir acción de terminar y resumen sencillo.
+- Integrate audio capture and live transcription.
+- Connect the preparation screen and pass its context to the pipeline.
+- Integrate the three dashboard areas.
+- Add the end interview action and a simple summary.
 
-### 2:30–3:00 — Integración completa
+### 2:30–3:00 — Full Integration
 
-- Conectar los módulos y resolver fallos del recorrido principal.
-- Añadir estados de carga, error y `UNVERIFIED`.
-- Verificar que una búsqueda fallida no detiene la transcripción.
+- Connect the modules and fix issues in the main flow.
+- Add loading, error, and `UNVERIFIED` states.
+- Verify that transcription continues after a search failure.
 
-### 3:00–4:00 — Pruebas, pulido y demo
+### 3:00–4:00 — Rehearsal, Polish, and Demo
 
-- Ensayar el flujo completo de preparación a insights.
-- Pulir jerarquía visual, legibilidad y estados de carga.
-- No iniciar funcionalidades P2 ni cambios de arquitectura en esta hora.
-- Dejar preparada una alternativa de demo si falla la conectividad.
+- Rehearse the full flow from preparation to insights.
+- Improve visual hierarchy, legibility, and loading states.
+- Defer P2 work and architecture changes.
+- Prepare a fallback demo in case connectivity fails.
 
-## Guion de demo
+## Demo Script
 
-Preparar una entrevista breve que incluya una afirmación verificablemente cierta, una demostrablemente falsa y una engañosa o dependiente del contexto. Mostrar:
+Prepare a short interview with a verifiably true claim, a demonstrably false claim, and a misleading or context-dependent claim. Walk through the interview in this order.
 
-1. Creación de la entrevista con contexto.
-2. Inicio de la grabación y transcripción progresiva.
-3. Detección de una afirmación.
-4. Resultado con evidencia y enlaces.
-5. Pregunta sugerida copiable.
-6. Fin de la entrevista e insights con recuentos.
+1. Create the interview and fill in its context.
+2. Start recording and show the transcript updating.
+3. Show the detection of a claim.
+4. Open a fact check with evidence and source links.
+5. Copy a suggested follow-up question.
+6. End the interview and show the insights and verdict counts.
 
-La demo debe priorizar fiabilidad sobre cantidad de funciones.
+Prioritize a reliable demo of the core flow.
 
-## Criterios de éxito
+## Success Criteria
 
-- Se completa el flujo de preparación, entrevista en directo e insights.
-- El audio sigue transcribiéndose mientras se verifican afirmaciones.
-- Las tarjetas contienen fuentes consultables cuando hay evidencia disponible.
-- La ausencia de pruebas suficientes aparece como `UNVERIFIED`.
-- Las preguntas son específicas y están ligadas a afirmaciones.
-- La aplicación sigue siendo comprensible y usable ante errores de API.
+- The user can complete preparation, the live interview, and the final insights.
+- Audio keeps transcribing while claims are checked.
+- Cards include source links when evidence is available.
+- Claims with insufficient evidence appear as `UNVERIFIED`.
+- Suggested questions are specific and linked to claims.
+- The application remains understandable and usable when an API call fails.
