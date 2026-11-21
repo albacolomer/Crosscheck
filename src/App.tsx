@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { PreparationPage, type PreparedInterview } from './pages/PreparationPage'
 import { InsightsPage } from './features/insights/InsightsPage'
 import { LiveDashboard } from './features/live/LiveDashboard'
-import { demoChecks } from './features/live/mock-data'
+import { useLiveInterview } from './hooks/useLiveInterview'
 
 type Page = 'preparation' | 'interview' | 'insights'
 
@@ -15,6 +15,7 @@ function pageFromLocation(): Page {
 function App() {
   const [page, setPage] = useState<Page>(pageFromLocation)
   const [interview, setInterview] = useState<PreparedInterview | null>(null)
+  const live = useLiveInterview(interview)
 
   useEffect(() => {
     function handlePopState() {
@@ -41,10 +42,29 @@ function App() {
   }
 
   if (page === 'insights') {
-    return <InsightsPage checks={demoChecks} onBack={() => navigate('interview')} />
+    return <InsightsPage checks={live.factChecks} onBack={() => navigate('interview')} />
   }
 
-  return <LiveDashboard onEndInterview={() => navigate('insights')} />
+  async function endInterview() {
+    if (live.endedAt !== undefined || await live.end()) navigate('insights')
+  }
+
+  return (
+    <LiveDashboard
+      title={live.interview?.title ?? 'New interview'}
+      intervieweeName={live.interview?.intervieweeName ?? interview.intervieweeName}
+      transcript={live.transcript}
+      checks={live.factChecks}
+      connectionStatus={live.connectionStatus}
+      recordingStatus={live.recordingStatus}
+      error={live.recordingError ?? live.error}
+      ending={live.ending}
+      onStartRecording={live.start}
+      onStopRecording={() => void live.stop()}
+      onRetryConnection={live.retry}
+      onEndInterview={() => void endInterview()}
+    />
+  )
 }
 
 export default App

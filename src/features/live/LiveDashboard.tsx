@@ -7,26 +7,68 @@ import {
   Copy,
   ExternalLink,
   LoaderCircle,
+  Mic,
   Pause,
   Square,
   X,
 } from 'lucide-react'
-import type { ClaimCheck } from '../../../shared/types'
-import { demoChecks, demoInterview, demoTranscript, formatTimestamp } from './mock-data'
+import type { ClaimCheck, TranscriptSegment } from '../../../shared/types'
+import type { InterviewConnectionStatus } from '../../hooks/useLiveInterview'
+import { formatTimestamp } from './mock-data'
+
+export type RecordingStatus = 'idle' | 'connecting' | 'recording' | 'stopping' | 'error'
 
 interface LiveDashboardProps {
+  title: string
+  intervieweeName: string
+  transcript: TranscriptSegment[]
+  checks: ClaimCheck[]
+  connectionStatus: InterviewConnectionStatus
+  recordingStatus: RecordingStatus
+  error: string | null
+  ending: boolean
+  onStartRecording: () => void
+  onStopRecording: () => void
+  onRetryConnection: () => void
   onEndInterview: () => void
 }
 
-export function LiveDashboard({ onEndInterview }: LiveDashboardProps) {
-  const [checks] = useState(demoChecks)
-  const [alertId, setAlertId] = useState<string | null>('c2')
+function findClaim(checks: ClaimCheck[], segment: TranscriptSegment) {
+  if (!segment.isFinal) return undefined
+  const text = segment.text.toLocaleLowerCase()
+  return checks.find((check) => check.originalQuote.trim() && text.includes(check.originalQuote.trim().toLocaleLowerCase()))
+}
+
+export function LiveDashboard({
+  title,
+  intervieweeName,
+  transcript: fullTranscript,
+  checks,
+  connectionStatus,
+  recordingStatus,
+  error,
+  ending,
+  onStartRecording,
+  onStopRecording,
+  onRetryConnection,
+  onEndInterview,
+}: LiveDashboardProps) {
+  const [alertId, setAlertId] = useState<string | null>(null)
   const [infoId, setInfoId] = useState<string | null>(null)
   const [showAllTranscript, setShowAllTranscript] = useState(true)
   const [copiedText, setCopiedText] = useState<string | null>(null)
-  const [isPaused, setIsPaused] = useState(false)
   const activeAlert = checks.find((check) => check.id === alertId)
-  const transcript = showAllTranscript ? demoTranscript : demoTranscript.slice(-5)
+  const transcript = showAllTranscript ? fullTranscript : fullTranscript.slice(-5)
+  const isRecording = recordingStatus === 'recording' || recordingStatus === 'connecting'
+  const isPaused = !isRecording
+  const canRecord = connectionStatus === 'connected' && !ending
+  const recordingLabel = {
+    idle: 'Not recording',
+    connecting: 'Starting microphone…',
+    recording: 'Recording',
+    stopping: 'Finishing last segment…',
+    error: 'Recording stopped',
+  }[recordingStatus]
 
   useEffect(() => {
     if (!activeAlert) return
@@ -65,23 +107,41 @@ export function LiveDashboard({ onEndInterview }: LiveDashboardProps) {
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="flex min-h-[74px] items-center justify-between gap-4 px-5 sm:px-7">
           <div className="min-w-0">
-            <h1 className="truncate text-base font-bold tracking-tight sm:text-lg">Interview: {demoInterview.title}</h1>
+            <h1 className="truncate text-base font-bold tracking-tight sm:text-lg">Interview: {title}</h1>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] sm:text-[11px]">
-              <span className="inline-flex items-center gap-1.5 font-semibold text-red-700"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-600" /> Recording</span>
-              <span className="text-slate-500">{isPaused ? 'Transcription paused' : 'Transcribing in English'}</span>
-              <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-500">Demo · sample statements</span>
+              <span className={`inline-flex items-center gap-1.5 font-semibold ${recordingStatus === 'recording' ? 'text-red-700' : 'text-slate-500'}`}><span className={`h-1.5 w-1.5 rounded-full ${recordingStatus === 'recording' ? 'animate-pulse bg-red-600' : 'bg-slate-400'}`} /> {recordingLabel}</span>
+              <span className="text-slate-500">{connectionStatus === 'creating' ? 'Creating interview…' : connectionStatus === 'connecting' ? 'Connecting…' : connectionStatus === 'reconnecting' ? 'Reconnecting…' : connectionStatus === 'error' ? 'Backend unavailable' : isPaused ? 'Transcription paused' : 'Transcribing'}</span>
             </div>
           </div>
-          <button onClick={onEndInterview} className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-red-600 px-3.5 py-2.5 text-xs font-bold text-white shadow-[0_3px_10px_rgba(220,38,38,0.22)] transition hover:bg-red-700 sm:px-4 sm:text-sm">
-            <Square size={12} fill="currentColor" /> <span className="hidden sm:inline">Stop recording</span><span className="sm:hidden">Stop</span><span className="border-l border-white/30 pl-2 font-mono tabular-nums">02:43</span>
+          <button onClick={onEndInterview} disabled={ending || connectionStatus === 'creating'} className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-red-600 px-3.5 py-2.5 text-xs font-bold text-white shadow-[0_3px_10px_rgba(220,38,38,0.22)] transition hover:bg-red-700 disabled:opacity-60 sm:px-4 sm:text-sm">
+            {ending ? <LoaderCircle size={12} className="animate-spin" /> : <Square size={12} fill="currentColor" />} <span className="hidden sm:inline">{ending ? 'Ending…' : 'End interview'}</span><span className="sm:hidden">End</span>
           </button>
         </div>
       </header>
 
       <section className="mx-auto w-full max-w-[720px] px-5 pb-12 pt-12 sm:px-8 sm:pt-16">
+        {error && (
+          <div role="alert" className="mb-4 flex items-start gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs text-rose-800">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <span className="flex-1">{error}</span>
+            {connectionStatus === 'error' && <button onClick={onRetryConnection} className="font-semibold underline underline-offset-2">Retry</button>}
+          </div>
+        )}
+        {!fullTranscript.length && (
+          <div className="flex flex-col items-center py-16 text-center">
+            {isRecording ? (
+              <p className="text-sm text-slate-500">{recordingStatus === 'connecting' ? 'Starting microphone…' : 'Listening for speech…'}</p>
+            ) : (
+              <>
+                <button onClick={onStartRecording} disabled={!canRecord || recordingStatus === 'stopping'} className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-3 text-sm font-bold text-white shadow-[0_3px_10px_rgba(220,38,38,0.22)] transition hover:bg-red-700 disabled:opacity-50"><Mic size={16} /> Start recording</button>
+                <p className="mt-2 text-xs text-slate-500">{canRecord ? 'The transcript will appear here.' : 'Waiting for the backend…'}</p>
+              </>
+            )}
+          </div>
+        )}
         <div className="space-y-1">
           {transcript.map((segment) => {
-            const claim = checks.find((check) => check.originalQuote === segment.text)
+            const claim = findClaim(checks, segment)
             const isInterviewer = segment.speaker === 'Journalist'
             const isInfoOpen = claim?.id === infoId
             return (
@@ -120,7 +180,7 @@ export function LiveDashboard({ onEndInterview }: LiveDashboardProps) {
       </section>
 
       <footer className="fixed bottom-0 left-0 right-0 z-30 flex h-12 items-center justify-between border-t border-slate-200 bg-white px-5 sm:px-7">
-        <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-600"><AudioLines size={17} className="text-slate-700" /><span>{isPaused ? 'Paused' : 'Listening…'}</span><button onClick={() => setIsPaused((paused) => !paused)} aria-label={isPaused ? 'Resume transcription' : 'Pause transcription'} className="ml-1 rounded p-1 text-slate-400 hover:bg-slate-100"><Pause size={12} /></button></div>
+        <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-600"><AudioLines size={17} className="text-slate-700" /><span>{isPaused ? 'Paused' : 'Listening…'}</span>{isRecording ? <button onClick={onStopRecording} aria-label="Pause transcription" className="ml-1 rounded p-1 text-slate-400 hover:bg-slate-100"><Pause size={12} /></button> : <button onClick={onStartRecording} disabled={!canRecord || recordingStatus === 'stopping'} aria-label="Start recording" className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-1 text-red-700 hover:bg-red-50 disabled:opacity-50"><Mic size={12} />{fullTranscript.length ? 'Resume' : 'Start recording'}</button>}</div>
         <div className="flex items-center gap-3.5 text-[9px] text-slate-500 sm:gap-5 sm:text-[10px]">
           <span className="inline-flex items-center gap-1.5"><span className="w-4 border-b-2 border-dotted border-slate-400" /><span className="hidden sm:inline">Checking</span><span className="sm:hidden">Check</span></span>
           <span className="inline-flex items-center gap-1.5"><span className="w-4 border-b-2 border-emerald-600" />Correct</span>
@@ -128,7 +188,7 @@ export function LiveDashboard({ onEndInterview }: LiveDashboardProps) {
         </div>
       </footer>
 
-      {activeAlert && <FactAlertModal key={activeAlert.id} check={activeAlert} copiedText={copiedText} onCopy={copyText} onDismiss={() => setAlertId(null)} />}
+      {activeAlert && <FactAlertModal key={activeAlert.id} check={activeAlert} intervieweeName={intervieweeName} copiedText={copiedText} onCopy={copyText} onDismiss={() => setAlertId(null)} />}
     </main>
   )
 }
@@ -185,7 +245,7 @@ function ClaimInfoPopover({ check, copiedText, onCopy, onClose }: { check: Claim
   )
 }
 
-function FactAlertModal({ check, copiedText, onCopy, onDismiss }: { check: ClaimCheck; copiedText: string | null; onCopy: (text: string) => void; onDismiss: () => void }) {
+function FactAlertModal({ check, intervieweeName, copiedText, onCopy, onDismiss }: { check: ClaimCheck; intervieweeName: string; copiedText: string | null; onCopy: (text: string) => void; onDismiss: () => void }) {
   const isFalse = check.status === 'CONTRADICTED'
   const isRedAlert = isFalse || check.status === 'MISLEADING'
   const statusLabel = isFalse ? 'False' : check.status === 'MISLEADING' ? 'Misleading' : 'Uncertain'
@@ -196,7 +256,7 @@ function FactAlertModal({ check, copiedText, onCopy, onDismiss }: { check: Claim
       <section role="dialog" aria-modal="true" aria-labelledby="fact-alert-title" className="max-h-[92vh] w-full max-w-[640px] overflow-y-auto rounded-2xl bg-white shadow-[0_24px_80px_rgba(0,0,0,0.28)]" onMouseDown={(event) => event.stopPropagation()}>
         <div className="flex items-center gap-3 px-5 pt-5 sm:px-6">
           <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-extrabold text-white ${isRedAlert ? 'bg-red-600' : 'bg-amber-600'}`}><X size={12} />{statusLabel}</span>
-          <span className="text-[10px] font-medium text-slate-500">{demoInterview.intervieweeName} · {formatTimestamp(check.timestampMs)}</span>
+          <span className="text-[10px] font-medium text-slate-500">{intervieweeName} · {formatTimestamp(check.timestampMs)}</span>
           <button onClick={onDismiss} aria-label="Close fact alert" className="ml-auto rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"><X size={15} /></button>
         </div>
 
