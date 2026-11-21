@@ -39,5 +39,6 @@ export interface ClaimCheck {
   confidence?: number
   evidence: Evidence[]
   suggestedQuestions: SuggestedQuestion[]
+  suggestedStatement?: string
   timestampMs: number
 }
