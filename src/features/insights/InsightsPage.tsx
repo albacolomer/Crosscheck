@@ -1,15 +1,12 @@
+import { useMemo, useState } from 'react'
 import {
-  ArrowLeft,
-  ArrowRight,
+  ArrowDownToLine,
+  Check,
   CheckCircle2,
   CircleHelp,
-  Clock3,
   ExternalLink,
-  Flag,
-  LoaderCircle,
+  FileText,
   ShieldAlert,
-  ShieldCheck,
-  Sparkles,
   TriangleAlert,
 } from 'lucide-react'
 import type { ClaimCheck } from '../../../shared/types'
@@ -20,124 +17,201 @@ interface InsightsPageProps {
   onBack: () => void
 }
 
-const stats: { status: ClaimCheck['status']; label: string; color: string; icon: typeof ShieldCheck }[] = [
-  { status: 'SUPPORTED', label: 'Supported', color: 'text-emerald-700 bg-emerald-50 border-emerald-100', icon: CheckCircle2 },
-  { status: 'CONTRADICTED', label: 'Contradicted', color: 'text-rose-700 bg-rose-50 border-rose-100', icon: ShieldAlert },
-  { status: 'MISLEADING', label: 'Misleading', color: 'text-amber-800 bg-amber-50 border-amber-100', icon: TriangleAlert },
-  { status: 'UNVERIFIED', label: 'Unverified', color: 'text-slate-600 bg-slate-100 border-slate-200', icon: CircleHelp },
-  { status: 'CHECKING', label: 'Checking', color: 'text-blue-700 bg-blue-50 border-blue-100', icon: LoaderCircle },
+type ClaimState = ClaimCheck['status']
+
+const stateColors: Record<ClaimState, string> = {
+  SUPPORTED: '#198754',
+  CONTRADICTED: '#dc2626',
+  MISLEADING: '#ea580c',
+  UNVERIFIED: '#858b95',
+  CHECKING: '#6366f1',
+}
+
+const claimTitles: Record<string, string> = {
+  c1: '18% transport investment',
+  c2: '40% lower pollution',
+  c3: 'Bike lanes in every district',
+  c4: 'Madrid population',
+  c5: 'Bus ridership growth',
+}
+
+const laneDefinitions: { label: string; states: ClaimState[] }[] = [
+  { label: 'Supported', states: ['SUPPORTED'] },
+  { label: 'Needs review', states: ['CONTRADICTED', 'MISLEADING'] },
+  { label: 'Uncertain', states: ['UNVERIFIED', 'CHECKING'] },
 ]
 
 export function InsightsPage({ checks, onBack }: InsightsPageProps) {
-  const countFor = (status: ClaimCheck['status']) => checks.filter((check) => check.status === status).length
-  const speakerStats = getSpeakerStats(checks)
-  const keyChecks = checks
-    .filter((check) => check.status === 'MISLEADING' || check.status === 'CONTRADICTED' || check.status === 'UNVERIFIED')
-    .sort((a, b) => b.timestampMs - a.timestampMs)
+  const [completedActions, setCompletedActions] = useState<string[]>([])
+  const speakers = useMemo(() => getSpeakerStats(checks), [checks])
+  const countFor = (status: ClaimState) => checks.filter((check) => check.status === status).length
+  const supportedCount = countFor('SUPPORTED')
+  const reviewCount = countFor('CONTRADICTED') + countFor('MISLEADING')
+  const uncertainCount = countFor('UNVERIFIED') + countFor('CHECKING')
+  const durationMs = Math.max(...demoTranscript.map((segment) => segment.timestampMs))
+  const findings = checks
+    .filter((check) => check.status === 'CONTRADICTED' || check.status === 'MISLEADING' || check.status === 'UNVERIFIED')
+    .sort((a, b) => priorityFor(b.status) - priorityFor(a.status))
+    .slice(0, 3)
+  const nextSteps = checks
+    .filter((check) => check.status === 'CONTRADICTED' || check.status === 'MISLEADING' || check.status === 'UNVERIFIED')
+    .map((check) => ({ id: check.id, text: check.suggestedQuestions[0]?.text }))
+    .filter((item): item is { id: string; text: string } => Boolean(item.text))
+
+  function exportSummary() {
+    const rows = [
+      `Interview: ${demoInterview.title}`,
+      `Interviewee: ${demoInterview.intervieweeName}`,
+      `Duration: ${formatTimestamp(durationMs)}`,
+      `Claims detected: ${checks.length}`,
+      `Supported: ${supportedCount}`,
+      `Contradicted: ${countFor('CONTRADICTED')}`,
+      `Misleading: ${countFor('MISLEADING')}`,
+      `Unverified: ${countFor('UNVERIFIED')}`,
+      `Checking: ${countFor('CHECKING')}`,
+      '',
+      ...checks.map((check) => `${formatTimestamp(check.timestampMs)} | ${check.status} | ${check.normalizedClaim}`),
+    ]
+    const url = URL.createObjectURL(new Blob([rows.join('\n')], { type: 'text/plain;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = 'crosscheck-interview-summary.txt'
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+  }
+
+  function toggleAction(id: string) {
+    setCompletedActions((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
+  }
 
   return (
-    <main className="min-h-screen bg-[#f5f6f8] text-slate-900">
+    <main className="min-h-screen bg-[#f3f4f6] text-slate-900">
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex h-[68px] max-w-6xl items-center justify-between px-5 sm:px-8">
-          <div className="flex items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-slate-900 text-white"><ShieldCheck size={19} /></span>
-            <span className="text-[17px] font-bold tracking-tight">crosscheck<span className="text-cyan-600">.</span></span>
+        <div className="flex min-h-[68px] flex-wrap items-center justify-between gap-3 px-5 py-3 sm:px-7">
+          <div className="min-w-0">
+            <h1 className="truncate text-base font-bold tracking-tight sm:text-lg">Interview: {demoInterview.title}</h1>
+            <p className="mt-0.5 text-[10px] text-slate-500">Insights · 21 Nov 2026 · {formatDuration(durationMs)} · English</p>
           </div>
-          <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-amber-900">Demo summary</span>
+          <div className="flex shrink-0 items-center gap-2">
+            <button onClick={onBack} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px] font-bold text-slate-700 hover:bg-slate-50 sm:text-xs"><FileText size={14} /> Open transcript</button>
+            <button onClick={exportSummary} className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-[10px] font-bold text-white hover:bg-slate-700 sm:text-xs"><ArrowDownToLine size={14} /> Export</button>
+          </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-6xl px-5 pb-14 pt-8 sm:px-8 sm:pt-12">
-        <button onClick={onBack} className="mb-7 inline-flex items-center gap-2 text-sm font-semibold text-slate-500 transition hover:text-slate-900"><ArrowLeft size={16} /> Back to interview</button>
-        <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-cyan-800">INTERVIEW ENDED</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-4xl">Interview insights</h1>
-            <p className="mt-3 text-sm text-slate-500">{demoInterview.title} <span className="px-1.5 text-slate-300">·</span> {demoInterview.intervieweeName}, {demoInterview.intervieweeRole}</p>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-slate-400"><Clock3 size={14} /> 02:43 interview</div>
-        </div>
-
-        <section className="mt-7 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <p className="text-xs font-semibold text-slate-500">Claims detected</p>
-            <p className="mt-3 text-3xl font-bold tracking-tight">{checks.length}</p>
-            <p className="mt-1 text-[11px] text-slate-400">{checks.length - countFor('CHECKING')} checked</p>
-          </div>
-          {stats.map(({ status, label, color, icon: Icon }) => (
-            <div key={status} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-              <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border ${color}`}><Icon size={16} className={status === 'CHECKING' && countFor(status) > 0 ? 'animate-spin' : ''} /></span>
-              <p className="mt-3 text-3xl font-bold tracking-tight">{countFor(status)}</p>
-              <p className="mt-1 text-[11px] font-medium text-slate-500">{label}</p>
-            </div>
-          ))}
+      <div className="mx-auto max-w-[1040px] px-4 pb-12 pt-5 sm:px-6 lg:px-8">
+        <section className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
+          <MetricCard label="Claims detected" value={checks.length} detail={`in ${formatDuration(durationMs)}`} icon={<FileText size={15} />} tone="slate" />
+          <MetricCard label="Supported" value={supportedCount} detail={`${percent(supportedCount, checks.length)}% of claims`} icon={<CheckCircle2 size={15} />} tone="green" />
+          <MetricCard label="Needs review" value={reviewCount} detail={`${countFor('CONTRADICTED')} contradicted · ${countFor('MISLEADING')} misleading`} icon={<ShieldAlert size={15} />} tone="red" />
+          <MetricCard label="Uncertain / checking" value={uncertainCount} detail={`${countFor('UNVERIFIED')} unverified · ${countFor('CHECKING')} pending`} icon={<CircleHelp size={15} />} tone="gray" />
         </section>
 
-        <section className="mt-7 rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex flex-col justify-between gap-1 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-center sm:px-6">
-            <div><h2 className="text-sm font-bold">Claim checks by speaker</h2><p className="mt-1 text-[11px] text-slate-400">Counts are linked to the speaker who made each claim.</p></div>
-            <span className="text-[11px] text-slate-400">{speakerStats.length} speakers</span>
+        <section className="mt-3 grid items-stretch gap-3 lg:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.9fr)]">
+          <TimelinePanel checks={checks} durationMs={durationMs} />
+          <SpeakerPanel speakers={speakers} />
+        </section>
+
+        <section className="mt-3 grid items-stretch gap-3 lg:grid-cols-[minmax(0,1.25fr)_minmax(340px,0.9fr)]">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+            <div className="mb-3 flex items-center gap-2"><TriangleAlert size={15} className="text-slate-500" /><h2 className="text-xs font-bold">Key findings</h2></div>
+            <div className="space-y-3">
+              {findings.length > 0 ? findings.map((check) => <Finding key={check.id} check={check} />) : <p className="text-xs text-slate-500">No claims need follow-up.</p>}
+              {supportedCount > 0 && <div className="flex items-start gap-2.5 text-[11px] leading-[1.55] text-slate-700"><span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-md bg-emerald-50 text-emerald-700"><Check size={12} /></span><span>{supportedCount} claim{supportedCount === 1 ? '' : 's'} supported by the available sources.</span></div>}
+            </div>
           </div>
-          <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-5">
-            {speakerStats.map((speaker) => <SpeakerCard key={speaker.name} speaker={speaker} />)}
+
+          <div className="rounded-xl bg-[#17181c] p-4 text-white sm:p-5">
+            <p className="text-[9px] font-extrabold uppercase tracking-[0.12em] text-slate-300">Overall takeaway</p>
+            <h2 className="mt-2 text-base font-bold leading-[1.35] sm:text-lg">The budget figure is supported. Other claims need context or follow-up.</h2>
+            <div className="mt-4 space-y-2.5">
+              {nextSteps.map((step) => {
+                const done = completedActions.includes(step.id)
+                return <label key={step.id} className="flex cursor-pointer items-start gap-2.5 text-[10px] leading-[1.5] text-slate-200 sm:text-[11px]">
+                  <input type="checkbox" checked={done} onChange={() => toggleAction(step.id)} className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-cyan-400" />
+                  <span className={done ? 'text-slate-500 line-through' : ''}>{step.text}</span>
+                </label>
+              })}
+            </div>
           </div>
         </section>
 
-        <section className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(270px,0.65fr)]">
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4"><Sparkles size={17} className="text-cyan-700" /><h2 className="text-sm font-bold">Key findings</h2></div>
-            <div className="divide-y divide-slate-100">
-              {keyChecks.length > 0 ? keyChecks.map((check) => <Finding key={check.id} check={check} />) : <p className="p-5 text-sm text-slate-500">No key findings to highlight.</p>}
-            </div>
-          </div>
-
-          <aside className="space-y-5">
-            <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-4"><CircleHelp size={17} className="text-violet-700" /><h2 className="text-sm font-bold">Further research</h2></div>
-              <ul className="space-y-3 p-5 text-[13px] leading-[1.6] text-slate-600">
-                <li className="flex gap-2.5"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />Request a list of bike lane sections opened by district and date.</li>
-                <li className="flex gap-2.5"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />Clarify whether the budget increase refers to approved spending or actual expenditure.</li>
-                <li className="flex gap-2.5"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-violet-500" />Request air quality data broken down by monitoring station and pollutant.</li>
-              </ul>
-            </div>
-            <div className="rounded-2xl border border-cyan-100 bg-cyan-50/60 p-5">
-              <div className="flex items-center gap-2 text-cyan-900"><Flag size={16} /><h2 className="text-sm font-bold">Overall takeaways</h2></div>
-              <p className="mt-2 text-[13px] leading-[1.65] text-slate-600">The conversation included quantitative claims about investment and air quality. One needs context about how it was measured; another needs more specific sources to verify.</p>
-            </div>
-          </aside>
-        </section>
-
-        <div className="mt-7 flex flex-col justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-900 sm:flex-row sm:items-center">
-          <span className="flex items-start gap-2"><TriangleAlert size={15} className="mt-0.5 shrink-0" />Demo content only; this is not a real fact-check. Review every source before publication.</span>
-          <button onClick={onBack} className="inline-flex shrink-0 items-center gap-1 font-bold hover:underline">Back to live interview <ArrowRight size={14} /></button>
-        </div>
+        <p className="mt-3 text-[9px] leading-4 text-slate-500">Demo data only. Verdicts apply to individual statements and do not measure a speaker’s overall accuracy.</p>
       </div>
     </main>
   )
 }
 
+function MetricCard({ label, value, detail, icon, tone }: { label: string; value: number; detail: string; icon: React.ReactNode; tone: 'slate' | 'green' | 'red' | 'gray' }) {
+  const tones = {
+    slate: 'bg-slate-100 text-slate-600',
+    green: 'bg-emerald-50 text-emerald-700',
+    red: 'bg-red-50 text-red-700',
+    gray: 'bg-slate-100 text-slate-600',
+  }
+  return (
+    <article className="rounded-xl border border-slate-200 bg-white p-3.5 sm:p-4">
+      <div className="flex items-center gap-2 text-[10px] font-medium text-slate-600"><span className={`grid h-5 w-5 place-items-center rounded-md ${tones[tone]}`}>{icon}</span>{label}</div>
+      <p className="mt-2 text-3xl font-bold leading-none tracking-tight">{value}</p>
+      <p className="mt-1.5 truncate text-[9px] text-slate-500">{detail}</p>
+    </article>
+  )
+}
+
+function TimelinePanel({ checks, durationMs }: { checks: ClaimCheck[]; durationMs: number }) {
+  const lanes = laneDefinitions.map((lane) => ({
+    ...lane,
+    checks: checks.filter((check) => lane.states.includes(check.status)).sort((a, b) => a.timestampMs - b.timestampMs),
+  }))
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((fraction) => Math.round(durationMs * fraction))
+
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-xs font-bold">Claims during the interview</h2>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[9px] text-slate-500">
+          <LegendDot color={stateColors.SUPPORTED} label="Supported" />
+          <LegendDot color={stateColors.MISLEADING} label="Needs review" />
+          <LegendDot color={stateColors.UNVERIFIED} label="Uncertain" />
+        </div>
+      </div>
+
+      <div className="mt-3">
+        {lanes.map((lane) => <div key={lane.label} className="grid min-h-[48px] grid-cols-[76px_minmax(0,1fr)] items-center border-b border-slate-100 py-2">
+          <span className="text-[9px] font-medium text-slate-600">{lane.label}</span>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5">
+            {lane.checks.map((check) => (
+              <div key={check.id} className="inline-flex min-w-0 items-center gap-1.5 text-[9px] text-slate-600" title={check.normalizedClaim}>
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${check.status === 'CONTRADICTED' ? 'rounded-[2px]' : ''}`} style={{ backgroundColor: stateColors[check.status] }} />
+                <span className="shrink-0 font-mono text-slate-500">{formatTimestamp(check.timestampMs)}</span>
+                <span className="max-w-[170px] truncate">{claimTitles[check.id] ?? check.normalizedClaim}</span>
+              </div>
+            ))}
+          </div>
+        </div>)}
+        <div className="ml-[76px] mt-1 flex justify-between text-[8px] text-slate-400">{ticks.map((tick, index) => <span key={`${tick}-${index}`}>{formatTimestamp(tick)}</span>)}</div>
+      </div>
+      <p className="mt-2 text-[9px] text-slate-500">All {checks.length} claims were detected within {formatDuration(durationMs)}.</p>
+    </section>
+  )
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  return <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />{label}</span>
+}
+
 interface SpeakerStats {
   name: string
   total: number
-  counts: Record<ClaimCheck['status'], number>
+  counts: Record<ClaimState, number>
 }
 
 function getSpeakerStats(checks: ClaimCheck[]): SpeakerStats[] {
   const bySpeaker = new Map<string, SpeakerStats>()
-  const emptyCounts = (): SpeakerStats['counts'] => ({
-    SUPPORTED: 0,
-    CONTRADICTED: 0,
-    MISLEADING: 0,
-    UNVERIFIED: 0,
-    CHECKING: 0,
-  })
-
+  const emptyCounts = (): SpeakerStats['counts'] => ({ SUPPORTED: 0, CONTRADICTED: 0, MISLEADING: 0, UNVERIFIED: 0, CHECKING: 0 })
   for (const segment of demoTranscript) {
-    if (segment.speaker && !bySpeaker.has(segment.speaker)) {
-      bySpeaker.set(segment.speaker, { name: segment.speaker, total: 0, counts: emptyCounts() })
-    }
+    if (segment.speaker && !bySpeaker.has(segment.speaker)) bySpeaker.set(segment.speaker, { name: segment.speaker, total: 0, counts: emptyCounts() })
   }
-
   for (const check of checks) {
     const segment = demoTranscript.find((item) => item.text === check.originalQuote)
     if (!segment?.speaker) continue
@@ -146,50 +220,92 @@ function getSpeakerStats(checks: ClaimCheck[]): SpeakerStats[] {
     speaker.total += 1
     speaker.counts[check.status] += 1
   }
+  return [...bySpeaker.values()].sort((a, b) => b.total - a.total)
+}
 
-  return [...bySpeaker.values()]
+const donutOrder: ClaimState[] = ['SUPPORTED', 'CONTRADICTED', 'MISLEADING', 'UNVERIFIED', 'CHECKING']
+
+function SpeakerPanel({ speakers }: { speakers: SpeakerStats[] }) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+      <h2 className="text-xs font-bold">Speakers</h2>
+      <div className="mt-2 divide-y divide-slate-100">
+        {speakers.map((speaker) => <SpeakerCard key={speaker.name} speaker={speaker} />)}
+      </div>
+    </section>
+  )
 }
 
 function SpeakerCard({ speaker }: { speaker: SpeakerStats }) {
-  const initials = speaker.name.split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase()
-  const counts: { status: ClaimCheck['status']; label: string; style: string }[] = [
-    { status: 'SUPPORTED', label: 'supported', style: 'bg-emerald-50 text-emerald-800' },
-    { status: 'CONTRADICTED', label: 'contradicted', style: 'bg-rose-50 text-rose-800' },
-    { status: 'MISLEADING', label: 'misleading', style: 'bg-amber-50 text-amber-900' },
-    { status: 'UNVERIFIED', label: 'uncertain', style: 'bg-slate-100 text-slate-700' },
-    { status: 'CHECKING', label: 'checking', style: 'bg-blue-50 text-blue-800' },
-  ]
-  const activeCounts = counts.filter(({ status }) => speaker.counts[status] > 0)
+  const gradient = makeDonut(speaker)
+  const checked = speaker.total - speaker.counts.CHECKING
+  const correctRate = checked ? Math.round((speaker.counts.SUPPORTED / checked) * 100) : 0
+  const summary = donutOrder.filter((status) => speaker.counts[status] > 0).map((status) => `${speaker.counts[status]} ${shortState(status)}`).join(' · ')
 
   return (
-    <article className="rounded-xl border border-slate-200 p-4">
-      <div className="flex items-center gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-bold text-slate-600">{initials}</span>
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-sm font-bold text-slate-800">{speaker.name}</h3>
-          <p className="mt-0.5 text-[11px] text-slate-500">{speaker.name === demoInterview.intervieweeName ? 'Interviewee' : 'Interviewer'} · {speaker.total} {speaker.total === 1 ? 'claim' : 'claims'}</p>
-        </div>
+    <article className="flex items-center gap-3 py-3 first:pt-2 last:pb-1">
+      <div className="relative grid h-[62px] w-[62px] shrink-0 place-items-center rounded-full" style={{ background: gradient }}>
+        <div className="absolute inset-[8px] grid place-items-center rounded-full bg-white text-center"><span className="text-[12px] font-bold text-slate-900">{speaker.total || '—'}<span className="block text-[7px] font-medium text-slate-400">claims</span></span></div>
       </div>
-      {activeCounts.length ? (
-        <div className="mt-4 flex flex-wrap gap-1.5">
-          {activeCounts.map(({ status, label, style }) => <span key={status} className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${style}`}>{speaker.counts[status]} {label}</span>)}
-        </div>
-      ) : <p className="mt-4 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500">No verifiable claims detected for this speaker.</p>}
+      <div className="min-w-0 flex-1">
+        <h3 className="truncate text-[11px] font-bold text-slate-800">{speaker.name}</h3>
+        <p className="mt-0.5 text-[9px] text-slate-500">{speaker.name === demoInterview.intervieweeName ? 'Interviewee' : 'Interviewer'}</p>
+        <p className="mt-1 text-[9px] leading-[1.4] text-slate-600">{speaker.total ? summary : 'No factual claims detected'}</p>
+        {speaker.total > 0 && <p className="mt-0.5 text-[9px] font-semibold text-emerald-700">{correctRate}% of checked claims supported</p>}
+      </div>
     </article>
   )
 }
 
+function makeDonut(speaker: SpeakerStats) {
+  if (!speaker.total) return '#edf0f3'
+  let current = 0
+  const stops = donutOrder.filter((status) => speaker.counts[status] > 0).map((status) => {
+    const start = current
+    current += (speaker.counts[status] / speaker.total) * 100
+    return `${stateColors[status]} ${start}% ${current}%`
+  })
+  return `conic-gradient(${stops.join(', ')})`
+}
+
+function shortState(status: ClaimState) {
+  const labels: Record<ClaimState, string> = {
+    SUPPORTED: 'supported',
+    CONTRADICTED: 'contradicted',
+    MISLEADING: 'misleading',
+    UNVERIFIED: 'uncertain',
+    CHECKING: 'checking',
+  }
+  return labels[status]
+}
+
+function priorityFor(status: ClaimState) {
+  return status === 'CONTRADICTED' ? 3 : status === 'MISLEADING' ? 2 : 1
+}
+
 function Finding({ check }: { check: ClaimCheck }) {
-  const verdict = check.status === 'MISLEADING' ? 'Misleading' : check.status === 'CONTRADICTED' ? 'Contradicted' : 'Unverified'
-  const badge = check.status === 'MISLEADING' ? 'bg-amber-50 text-amber-800' : check.status === 'CONTRADICTED' ? 'bg-rose-50 text-rose-800' : 'bg-slate-100 text-slate-700'
+  const colors = check.status === 'CONTRADICTED' ? 'bg-red-50 text-red-700' : check.status === 'MISLEADING' ? 'bg-orange-50 text-orange-700' : 'bg-slate-100 text-slate-600'
+  const Icon = check.status === 'CONTRADICTED' ? ShieldAlert : check.status === 'MISLEADING' ? TriangleAlert : CircleHelp
+  const verdict = check.status === 'CONTRADICTED' ? 'Contradicted' : check.status === 'MISLEADING' ? 'Misleading' : 'Uncertain'
+
   return (
-    <article className="p-5">
-      <div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${badge}`}>{verdict}</span><span className="text-[10px] text-slate-400">{formatTimestamp(check.timestampMs)}</span></div>
-      <h3 className="mt-2.5 text-sm font-bold leading-5 text-slate-800">{check.normalizedClaim}</h3>
-      <p className="mt-1.5 text-xs leading-[1.65] text-slate-500">{check.explanation}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {check.evidence.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1.5 text-[10px] font-semibold text-slate-600 hover:border-cyan-300 hover:text-cyan-800">{source.title}<ExternalLink size={10} /></a>)}
+    <article className="flex items-start gap-2.5 text-[10px] leading-[1.55] text-slate-700">
+      <span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-md ${colors}`}><Icon size={12} /></span>
+      <div className="min-w-0 flex-1">
+        <p><span className="font-bold">{verdict}:</span> {check.normalizedClaim}</p>
+        <p className="mt-0.5 text-slate-500">{check.explanation}</p>
+        {check.evidence[0] && <a href={check.evidence[0].url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-[9px] font-semibold text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-cyan-800">{check.evidence[0].title}<ExternalLink size={9} /></a>}
       </div>
     </article>
   )
+}
+
+function percent(part: number, total: number) {
+  return total ? Math.round((part / total) * 100) : 0
+}
+
+function formatDuration(durationMs: number) {
+  const minutes = Math.floor(durationMs / 60_000)
+  const seconds = Math.floor((durationMs % 60_000) / 1_000)
+  return minutes ? `${minutes} min ${seconds} sec` : `${seconds} sec`
 }
