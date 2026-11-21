@@ -75,6 +75,7 @@ function App() {
       onRenameSpeaker={speakerNames.rename}
       onSwapSpeakers={speakerNames.swap}
       checks={live.factChecks}
+      jobs={live.jobs}
       connectionStatus={live.connectionStatus}
       recordingStatus={live.recordingStatus}
       error={live.recordingError ?? live.error}

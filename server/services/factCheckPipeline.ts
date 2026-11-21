@@ -7,8 +7,11 @@
  * AbortSignal, and publishes each result as soon as its promise settles.
  *
  * Promise / failure behavior for the integrator:
- * - `extractClaims` resolves `[]` for non-final segments without calling extraction, otherwise
- *   resolves the injected extractor's claims. A successful "no claims" is `[]`; failures reject.
+ * - `extractClaims` resolves `[]` for non-final segments without calling extraction. When a
+ *   checkability gate is injected, it runs first (one Decisions API call) and a "not checkable"
+ *   answer resolves `[]` without calling extraction. A gate failure is logged and fails open to
+ *   extraction, so an outage of the gate never hides claims. Otherwise it resolves the injected
+ *   extractor's claims. A successful "no claims" is `[]`; extraction failures reject.
  * - `checkClaim` runs one claim: search, then analysis, with the same signal. It resolves one
  *   terminal ClaimCheck or rejects with a sanitized PipelineError. Each claim is an independent
  *   promise, so one failed claim never discards another claim's completed result.
@@ -22,6 +25,7 @@ import {
   type AiPipeline,
   type AnalyzeEvidence,
   type ClaimCheck,
+  type ClassifyCheckability,
   type ExtractClaims,
   type ExtractedClaim,
   type ExtractionInput,
@@ -32,6 +36,7 @@ import {
   type WebSearchOptions,
 } from './pipeline/contracts.ts'
 import { createOpenAIStructuredGenerator } from './pipeline/openaiProvider.ts'
+import { createCheckabilityGate, DEFAULT_DECISIONS_MODEL } from './checkabilityGate.ts'
 import { createClaimExtractor } from './claimExtractor.ts'
 import { createEvidenceAnalyzer } from './evidenceAnalyzer.ts'
 import { createWebSearch } from './webSearch.ts'
@@ -46,6 +51,17 @@ export function createFactCheckPipeline(deps: PipelineDependencies): AiPipeline 
     async extractClaims(input: ExtractionInput, signal?: AbortSignal): Promise<ExtractedClaim[]> {
       if (!input.segment.isFinal) return []
       throwIfAborted(signal)
+      if (deps.classifyCheckability) {
+        try {
+          const decision = await deps.classifyCheckability(input, signal)
+          if (!decision.checkable) return []
+        } catch (error) {
+          throwIfAborted(signal)
+          const reason = error instanceof PipelineError ? `${error.code}: ${error.message}` : 'unexpected error'
+          console.warn(`Checkability gate failed (${reason}); falling back to claim extraction.`)
+        }
+        throwIfAborted(signal)
+      }
       return deps.extractClaims(input, signal)
     },
 
@@ -82,6 +98,7 @@ function throwIfAborted(signal?: AbortSignal) {
 // injectable; only the default export below binds the real P4-A/B/C factories.
 
 export interface PipelineFactories {
+  createCheckabilityGate?(options: { apiKey: string; model: string }): ClassifyCheckability
   createClaimExtractor(options: { generate: StructuredGenerate }): ExtractClaims
   createWebSearch(options: WebSearchOptions): SearchEvidence
   createEvidenceAnalyzer(options: { generate: StructuredGenerate }): AnalyzeEvidence
@@ -93,13 +110,19 @@ export type PipelineEnv = Record<string, string | undefined>
  * Builds the pipeline from environment configuration and injected factories. No network call
  * happens here. Missing keys do not throw at construction: the OpenAI adapter (and the search
  * adapter, per P4-B) reject each call with PipelineError('CONFIGURATION').
+ * The checkability gate uses OPENAI_DECISIONS_MODEL (default gpt-6-luna); "none" disables it.
  */
 export function createPipelineFromEnv(env: PipelineEnv, factories: PipelineFactories): AiPipeline {
   const generate = createOpenAIStructuredGenerator({
     apiKey: env.OPENAI_API_KEY?.trim() ?? '',
     model: env.OPENAI_ANALYSIS_MODEL?.trim() || DEFAULT_ANALYSIS_MODEL,
   })
+  const decisionsModel = env.OPENAI_DECISIONS_MODEL?.trim() || DEFAULT_DECISIONS_MODEL
+  const classifyCheckability = decisionsModel.toLowerCase() === 'none' || !factories.createCheckabilityGate
+    ? undefined
+    : factories.createCheckabilityGate({ apiKey: env.OPENAI_API_KEY?.trim() ?? '', model: decisionsModel })
   return createFactCheckPipeline({
+    classifyCheckability,
     extractClaims: factories.createClaimExtractor({ generate }),
     searchEvidence: factories.createWebSearch({ apiKey: env.TAVILY_API_KEY?.trim() ?? '' }),
     analyzeEvidence: factories.createEvidenceAnalyzer({ generate }),
@@ -112,6 +135,7 @@ export function createPipelineFromEnv(env: PipelineEnv, factories: PipelineFacto
  * Empty keys never prevent startup: each affected call rejects with PipelineError('CONFIGURATION').
  */
 const pipeline: AiPipeline = createPipelineFromEnv(process.env, {
+  createCheckabilityGate,
   createClaimExtractor,
   createWebSearch,
   createEvidenceAnalyzer,

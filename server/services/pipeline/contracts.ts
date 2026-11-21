@@ -79,6 +79,20 @@ export interface ExtractionInput {
 export type ExtractClaims = (input: ExtractionInput, signal?: AbortSignal) => Promise<ExtractedClaim[]>
 
 // ---------------------------------------------------------------------------
+// Checkability gate (runs before P4-A, one OpenAI Decisions API call per final segment)
+
+export interface CheckabilityDecision {
+  /** True when the segment asserts something public sources could confirm or refute. */
+  checkable: boolean
+  /** Decisions API choice: factual_claim, personal, opinion, question, filler or other. */
+  kind: string
+  /** Probability of `factual_claim`, from 0 to 1. */
+  probability: number
+}
+
+export type ClassifyCheckability = (input: ExtractionInput, signal?: AbortSignal) => Promise<CheckabilityDecision>
+
+// ---------------------------------------------------------------------------
 // P4-B — evidence retrieval (neutral: no stance, no verdict)
 
 export interface SearchSource {
@@ -146,6 +160,8 @@ export type SummarizeInterview = (input: SummaryInput) => PipelineSummary
 // P4-E — composition
 
 export interface PipelineDependencies {
+  /** Optional gate; when it says a segment is not checkable, extraction is skipped. Gate failures fail open. */
+  classifyCheckability?: ClassifyCheckability
   extractClaims: ExtractClaims
   searchEvidence: SearchEvidence
   analyzeEvidence: AnalyzeEvidence

@@ -13,6 +13,7 @@ import {
   Square,
   X,
 } from 'lucide-react'
+import type { ProcessingJob } from '../../../shared/api'
 import type { ClaimCheck, TranscriptSegment } from '../../../shared/types'
 import type { InterviewConnectionStatus } from '../../hooks/useLiveInterview'
 import type { SpeakerCandidate, SpeakerIdentity } from '../../lib/speakers'
@@ -30,6 +31,7 @@ interface LiveDashboardProps {
   onRenameSpeaker: (label: string, name: string) => void
   onSwapSpeakers: () => void
   checks: ClaimCheck[]
+  jobs?: ProcessingJob[]
   connectionStatus: InterviewConnectionStatus
   recordingStatus: RecordingStatus
   error: string | null
@@ -70,6 +72,7 @@ export function LiveDashboard({
   onRenameSpeaker,
   onSwapSpeakers,
   checks,
+  jobs = [],
   connectionStatus,
   recordingStatus,
   error,
@@ -84,6 +87,7 @@ export function LiveDashboard({
   const [showAllTranscript, setShowAllTranscript] = useState(true)
   const [copiedText, setCopiedText] = useState<string | null>(null)
   const activeAlert = checks.find((check) => check.id === alertId)
+  const failedExtractions = new Map(jobs.filter((job) => job.kind === 'extraction' && job.status === 'failed' && job.segmentId).map((job) => [job.segmentId, job.error]))
   const transcript = showAllTranscript ? fullTranscript : fullTranscript.slice(-5)
   const speakerByLabel = new Map(speakers.map((speaker) => [speaker.label, speaker]))
   const isRecording = recordingStatus === 'recording' || recordingStatus === 'connecting'
@@ -196,6 +200,7 @@ export function LiveDashboard({
                   <span className={`mr-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${style.dot}`} />
                   <span className={style.text}>{speaker?.name ?? 'Speaker'}</span> <span className="px-1 text-slate-300">·</span> {formatTimestamp(segment.timestampMs)}
                   {!segment.isFinal && <span className="ml-2 normal-case tracking-normal text-slate-400">Transcribing…</span>}
+                  {failedExtractions.has(segment.id) && <span title={failedExtractions.get(segment.id) ?? undefined} className="ml-2 inline-flex items-center gap-1 normal-case tracking-normal text-rose-600"><AlertTriangle size={10} />Claim detection failed</span>}
                 </div>
 
                 {claim ? (
