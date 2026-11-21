@@ -134,15 +134,15 @@ export function InsightsPage({ interviewId, createdAt, title, intervieweeName, t
             </div>
           </div>
 
-          <div className="rounded-xl bg-[#17181c] p-5 text-white sm:p-6">
-            <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-slate-300">Overall takeaway</p>
+          <div className="rounded-xl border border-slate-200 bg-slate-100 p-5 text-slate-900 sm:p-6">
+            <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-slate-500">Overall takeaway</p>
             <h2 className="mt-3 text-xl font-bold leading-[1.35] sm:text-2xl">{takeaway(claimCount, supportedCount, reviewCount, uncertainCount)}</h2>
             <div className="mt-5 space-y-3">
               {nextSteps.map((step) => {
                 const done = completedActions.includes(step.id)
-                return <label key={step.id} className="flex cursor-pointer items-start gap-3 text-sm leading-[1.5] text-slate-200 sm:text-base">
-                  <input type="checkbox" checked={done} onChange={() => toggleAction(step.id)} className="mt-1 h-5 w-5 shrink-0 accent-cyan-400" />
-                  <span className={done ? 'text-slate-500 line-through' : ''}>{step.text}</span>
+                return <label key={step.id} className="flex cursor-pointer items-start gap-3 text-sm leading-[1.5] text-slate-700 sm:text-base">
+                  <input type="checkbox" checked={done} onChange={() => toggleAction(step.id)} className="mt-1 h-5 w-5 shrink-0 accent-slate-700" />
+                  <span className={done ? 'text-slate-400 line-through' : ''}>{step.text}</span>
                 </label>
               })}
             </div>
