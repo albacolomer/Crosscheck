@@ -1,6 +1,10 @@
 import { useEffect, useState, type MouseEvent } from 'react'
 import { AlertCircle, AudioLines, Check, LoaderCircle, Plus, Trash2, X } from 'lucide-react'
+import type { ParsedPreparation } from '../../shared/preparation'
 import type { InterviewContext } from '../../shared/types'
+import { DictationPanel } from '../components/preparation/DictationPanel'
+import { useContextDictation } from '../hooks/useContextDictation'
+import { mergeInterviewees, mergeNotes, mergeTopics } from '../lib/mergePreparation'
 import { TagField } from '../components/preparation/TagField'
 
 export type Interviewee = { name: string; role: string; organization: string }
@@ -30,6 +34,12 @@ const commonTopics = [
   { name: 'Technology & AI', recommended: false },
 ]
 
+const commonTopicNames = commonTopics.map(({ name }) => name)
+
+function countLabel(count: number, singular: string, plural: string) {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
 type MicrophoneStatus = 'checking' | 'permission-needed' | 'ready' | 'denied' | 'missing' | 'unavailable' | 'requesting'
 
 export function PreparationPage({ onStart }: PreparationPageProps) {
@@ -40,6 +50,27 @@ export function PreparationPage({ onStart }: PreparationPageProps) {
   const [editingTopics, setEditingTopics] = useState(false)
   const [editingNotes, setEditingNotes] = useState(false)
   const [microphoneStatus, setMicrophoneStatus] = useState<MicrophoneStatus>('checking')
+  const [dictationSummary, setDictationSummary] = useState<string | null>(null)
+  const dictation = useContextDictation({ knownTopics: commonTopicNames, onResult: applyDictation })
+
+  /** Merges dictated context into what the user already entered, then opens the filled editors. */
+  function applyDictation(result: ParsedPreparation) {
+    const filled = [
+      result.interviewees.length && countLabel(result.interviewees.length, 'person', 'people'),
+      result.topics.length && countLabel(result.topics.length, 'topic', 'topics'),
+      result.notes.length && countLabel(result.notes.length, 'note', 'notes'),
+    ].filter(Boolean)
+    setDictationSummary(`Filled from dictation: ${filled.join(', ')}.`)
+    if (result.interviewees.length) {
+      setInterviewees((current) => mergeInterviewees(current, result.interviewees))
+      setEditingPeople(true)
+    }
+    if (result.topics.length) setTopics((current) => mergeTopics(current, result.topics, commonTopicNames))
+    if (result.notes.length) {
+      setNotes((current) => mergeNotes(current, result.notes))
+      setEditingNotes(true)
+    }
+  }
 
   const completedInterviewees = interviewees.filter((person) => person.name.trim() || person.role.trim() || person.organization.trim())
   const peopleLabel = completedInterviewees.length
@@ -206,6 +237,15 @@ export function PreparationPage({ onStart }: PreparationPageProps) {
           <div className="border-b border-slate-100 px-4 py-3.5 sm:px-5">
             <h1 id="context-title" className="text-sm font-semibold text-slate-900">Interview context <span className="ml-1 font-normal text-slate-400">Optional · helps fact-checking</span></h1>
           </div>
+
+          <DictationPanel
+            phase={dictation.phase}
+            transcript={dictation.transcript}
+            error={dictation.error}
+            filledSummary={dictationSummary}
+            onStart={() => { setDictationSummary(null); dictation.start() }}
+            onStop={dictation.stop}
+          />
 
           <div className="grid grid-cols-[62px_minmax(0,1fr)_auto] items-start gap-2 border-b border-slate-100 px-4 py-3.5 sm:grid-cols-[72px_minmax(0,1fr)_auto] sm:gap-3 sm:px-5">
             <span className="pt-2 text-[10px] font-semibold tracking-wide text-slate-500">WHO</span>
