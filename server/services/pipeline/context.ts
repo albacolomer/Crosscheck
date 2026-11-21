@@ -32,8 +32,20 @@ function quoted(text: string, maxChars: number): string {
 }
 
 /**
+ * Defaults the browser fills in when the journalist gave no preparation context. They carry no
+ * information about who is speaking, so prompts and search queries must not treat them as facts.
+ */
+const PLACEHOLDER_CONTEXT_VALUES = new Set(['untitled interview', 'unknown interviewee'])
+
+/** True for an empty context field or a placeholder such as "Unknown interviewee". */
+export function isPlaceholderContextValue(value: string | undefined): boolean {
+  const text = value ? normalizeWhitespace(value).toLowerCase() : ''
+  return !text || PLACEHOLDER_CONTEXT_VALUES.has(text)
+}
+
+/**
  * Formats the interview preparation context as labelled lines, capped at `maxChars` overall.
- * Empty fields are omitted.
+ * Empty fields and placeholders ("Untitled interview", "Unknown interviewee") are omitted.
  */
 export function formatInterviewContext(
   context: InterviewContext,
@@ -42,7 +54,7 @@ export function formatInterviewContext(
   const fieldMax = Math.min(DEFAULT_FIELD_MAX_CHARS, maxChars)
   const lines: string[] = []
   const add = (label: string, value: string | undefined) => {
-    if (value && normalizeWhitespace(value)) lines.push(`${label}: ${quoted(value, fieldMax)}`)
+    if (!isPlaceholderContextValue(value) && value) lines.push(`${label}: ${quoted(value, fieldMax)}`)
   }
   const addList = (label: string, values: string[] | undefined) => {
     const items = (values ?? []).map(normalizeWhitespace).filter(Boolean)
@@ -173,4 +185,39 @@ export function withSpeakerRoles(segments: TranscriptSegment[], interviewerSpeak
     const role = interviewerSpeakers.includes(speaker) ? 'interviewer' : 'interviewee'
     return { ...segment, speaker: `${speaker} (${role})` }
   })
+}
+
+// ---------------------------------------------------------------------------
+// Conversation excerpt for verification
+
+/** Preceding segments kept in the conversation excerpt sent to search and evidence analysis. */
+export const CONVERSATION_MAX_SEGMENTS = 6
+export const CONVERSATION_MAX_CHARS = 2400
+const CONVERSATION_SEGMENT_MAX_CHARS = 1500
+
+/**
+ * Bounds a claim's conversation excerpt: the last segment (the claim's own) is always kept, plus
+ * the most recent preceding final segments that fit the limits, oldest first. Unlike extraction
+ * context, segments may be truncated here: verification never checks quotes against them.
+ */
+export function boundConversation(segments: TranscriptSegment[] | undefined): TranscriptSegment[] {
+  const usable = (segments ?? []).filter((segment) => segment && typeof segment.text === 'string' && normalizeWhitespace(segment.text))
+  if (usable.length === 0) return []
+  const current = usable[usable.length - 1]
+  const preceding = selectRecentSegments(usable.slice(0, -1), current.id, {
+    maxSegments: CONVERSATION_MAX_SEGMENTS,
+    maxChars: CONVERSATION_MAX_CHARS,
+  })
+  return [...preceding, current].map((segment) => ({
+    ...segment,
+    text: truncate(normalizeWhitespace(segment.text), CONVERSATION_SEGMENT_MAX_CHARS),
+  }))
+}
+
+/** Formats a conversation excerpt, oldest first, marking the segment the claim comes from. */
+export function formatConversation(segments: TranscriptSegment[]): string {
+  if (segments.length === 0) return '(no conversation available)'
+  return segments
+    .map((segment, index) => `${index === segments.length - 1 ? '(claim made here) ' : ''}${formatSegment(segment)}`)
+    .join('\n')
 }
