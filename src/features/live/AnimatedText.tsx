@@ -14,14 +14,21 @@ function splitWords(text: string) {
 
 interface AnimatedTextProps {
   id: string
+  /** The whole segment text, even when only a range of its words is rendered. */
   text: string
+  /** First word to render; ranges let a segment be split into claim spans. */
+  fromWord?: number
+  /** One past the last word to render. */
+  toWord?: number
 }
 
 /**
- * Renders transcript text word by word. Words keep their index as React key,
- * so a growing partial segment only mounts — and animates — the new words.
+ * Renders transcript text word by word. Words keep their index in the whole
+ * segment as identity, so a growing partial segment only mounts — and
+ * animates — the new words, and splitting the text into ranges (claim spans)
+ * does not replay words that were already shown.
  */
-export function AnimatedText({ id, text }: AnimatedTextProps) {
+export function AnimatedText({ id, text, fromWord = 0, toWord }: AnimatedTextProps) {
   const words = splitWords(text)
   // Words below this index were shown before this instance mounted.
   const [skipBelow] = useState(() => shownWordCounts.get(id) ?? 0)
@@ -36,7 +43,8 @@ export function AnimatedText({ id, text }: AnimatedTextProps) {
     shownWordCounts.set(id, Math.max(shownWordCounts.get(id) ?? 0, words.length))
   }, [id, words.length])
 
-  return words.map((word, index) => {
+  return words.slice(fromWord, toWord).map((word, offset) => {
+    const index = fromWord + offset
     const animated = index >= skipBelow
     const step = index - batch.firstNewWord
     const style = animated && step > 0
@@ -44,7 +52,7 @@ export function AnimatedText({ id, text }: AnimatedTextProps) {
       : undefined
     return (
       <Fragment key={index}>
-        {index > 0 && ' '}
+        {offset > 0 && ' '}
         <span className={animated ? 'live-word' : undefined} style={style}>{word}</span>
       </Fragment>
     )
