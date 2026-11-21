@@ -34,6 +34,8 @@ If this baseline becomes stale, report the discrepancy before changing a contrac
 
 The paths below reserve responsibilities; files described as new are planned deliverables, not available modules. Sharing `server/services/` does not mean sharing every file inside it.
 
+**Delegation within Person 4's area:** Person 4 may assign the analysis packages in [PLAN.md](./PLAN.md) to teammates who have finished their original work. Each assigned contributor may edit only that package's listed paths; this is not permission to modify other Person 4 packages or their original frontend/audio/backend neighbors. Person 4 remains accountable for the combined result. Juan alone edits this contract and the task plan; contributors report proposed contract changes instead of editing those documents concurrently. P4-0 freezes the common baseline before P4-A through P4-E begin independent implementation.
+
 | Surface | Owner | Responsibility |
 |---|---|---|
 | `server/services/claimExtractor.ts` | Person 4 | Claim extraction using interview context. New. |
@@ -41,6 +43,9 @@ The paths below reserve responsibilities; files described as new are planned del
 | `server/services/evidenceAnalyzer.ts` | Person 4 | OpenAI evidence evaluation and follow-up questions. New. |
 | `server/services/factCheckPipeline.ts` | Person 4 | Search/evaluation composition and provider adapters. New. |
 | `server/services/summaryGenerator.ts` | Person 4 | Summary statistics and findings. New. |
+| `server/services/pipeline/contracts.ts` | Person 4 / P4-0 | Single module-local type baseline for analysis packages. New. |
+| `server/services/pipeline/context.ts` | Person 4 / P4-A | Pure recent-context preparation; no interview store. New. |
+| `server/services/pipeline/openaiProvider.ts` | Person 4 / P4-E | Shared server-only structured-generation adapter. New. |
 | `server/index.ts` and `server/routes/` | Person 5 | Startup, request validation, HTTP routes, and responses. |
 | `server/services/interviewStore.ts` | Person 5 | In-memory interview state. New. |
 | Queue, per-interview deduplication, REST/WebSocket transport | Person 5 | Use separate owned files, not Person 4's analysis modules. |
@@ -52,7 +57,7 @@ Do not edit another owner's files, create a second implementation, or change sha
 
 ## 3. Proposed integration contract — confirmation required
 
-These signatures are a proposal, not existing exports or an approved change to `shared/types.ts`. Person 4 will export module-local types; Person 5 will import them rather than copy or redefine them.
+These signatures are an initial proposal, not existing exports, a frozen parallel-development contract, or an approved change to `shared/types.ts`. P4-0 in [PLAN.md](./PLAN.md) must first record the agreed revision here and implement its module-local types, including conversation context, provenance, injected dependencies, summary, and failure behavior. After that baseline is shared, all packages import the same definitions rather than copying them. Contributors must not infer missing interfaces from these illustrative signatures.
 
 ```ts
 // Proposed module-local contract, not yet implemented.
