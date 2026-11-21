@@ -1,12 +1,10 @@
 import { Fragment, useEffect, useState, type CSSProperties } from 'react'
 import './live-motion.css'
+import { shownWordCounts } from './shown-words'
 
 const WORD_STAGGER_MS = 35
 const MAX_STAGGER_STEPS = 8
 
-// Words already shown per segment. It survives remounts, such as the claim
-// highlight replacing the plain paragraph or the transcript filter toggling.
-const shownWordCounts = new Map<string, number>()
 
 function splitWords(text: string) {
   return text.match(/\S+/gu) ?? []

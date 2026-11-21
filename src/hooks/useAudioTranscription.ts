@@ -65,5 +65,15 @@ export function useAudioTranscription(interviewId?: string) {
     return [...finalSegmentsRef.current.values()].sort((a, b) => a.timestampMs - b.timestampMs)
   }, [])
 
-  return { status, segments, error, start, stop }
+  /** Discards the current session and its segments without waiting for pending ones. */
+  const reset = useCallback(() => {
+    sessionRef.current?.dispose()
+    sessionRef.current = null
+    finalSegmentsRef.current = new Map()
+    setSegments([])
+    setError(null)
+    setStatus('idle')
+  }, [])
+
+  return { status, segments, error, start, stop, reset }
 }
