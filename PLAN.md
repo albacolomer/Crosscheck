@@ -1,271 +1,167 @@
-# Crosscheck — Plan para la hackathon
+# Crosscheck — Plan de implementación
 
-## Idea
+## Objetivo
 
-Una aplicación que acompaña una entrevista y ayuda a verificar las afirmaciones que aparecen durante la conversación. Antes se prepara el contexto; durante se muestran verificaciones con fuentes; al terminar se genera un resumen que permite revisar cada afirmación y su evidencia.
+Construir en una hackathon de cuatro horas un copiloto de investigación para periodistas. Durante una entrevista, la aplicación transcribe el audio, identifica afirmaciones factuales, busca evidencia fiable y propone preguntas para profundizar. Al terminar, presenta los hallazgos principales.
 
-El objetivo es ayudar a contrastar información sin interrumpir la entrevista. La herramienta evalúa afirmaciones concretas, no la honestidad de una persona: una afirmación falsa no demuestra que exista intención de mentir.
+La prioridad es un recorrido funcional de principio a fin. La transcripción y la verificación son el núcleo; mantener la entrevista en marcha tiene prioridad sobre añadir funciones secundarias.
 
-## Las tres fases
+## Alcance y tiempo
 
-### 1. Preparar la entrevista
+- Equipo de cinco personas.
+- Tres horas para desarrollo e integración.
+- Última hora reservada para pruebas, pulido y preparación de la demo.
+- Sin autenticación, base de datos ni almacenamiento persistente. El estado vive en memoria.
+- No añadir infraestructura ni dependencias salvo que sean necesarias para completar el recorrido.
 
-El usuario crea una sesión e introduce:
+## Stack acordado
 
-- Título y tema de la entrevista.
-- Participantes y sus roles.
-- Contexto relevante: país, período temporal y asuntos previstos.
-- Documentos o enlaces de referencia, si los tiene.
-
-La aplicación muestra una ficha de contexto que se puede revisar antes de empezar. Este contexto ayuda a interpretar nombres, cifras y referencias; no se considera evidencia de que las afirmaciones sean ciertas.
-
-**Resultado:** una sesión preparada y un botón para iniciar la entrevista.
-
-### 2. Verificar durante la entrevista
-
-La aplicación recibe audio, lo transcribe y detecta afirmaciones que se pueden contrastar. Para cada una, busca evidencia y publica una tarjeta de verificación vinculada al momento de la conversación.
-
-La pantalla tiene dos zonas principales:
-
-- Transcripción en directo, con la afirmación que se está analizando resaltada.
-- Tarjetas de verificación, con estado, explicación breve y fuentes consultables.
-
-Estados propuestos:
-
-| Estado | Significado |
+| Capa | Tecnología |
 | --- | --- |
-| Verificando | Se está buscando y evaluando evidencia. |
-| Respaldada | Las fuentes encontradas respaldan la afirmación en su contexto. |
-| Refutada | Las fuentes encontradas contradicen la afirmación. |
-| Necesita contexto | La afirmación omite matices relevantes o mezcla elementos correctos e incorrectos. |
-| Sin evidencia suficiente | No se puede llegar a una conclusión con las fuentes disponibles. |
+| Frontend | React, Vite, TypeScript, Tailwind CSS y shadcn/ui |
+| Backend | Node.js y Express |
+| Transcripción | OpenAI Realtime API |
+| Análisis | OpenAI API |
+| Búsqueda web | Tavily Search API |
+| Estado | React state o Context en frontend; memoria en backend |
 
-Las opiniones, predicciones y juicios de valor no reciben un veredicto factual. Una misma intervención puede contener varias afirmaciones que deben evaluarse por separado.
+Las claves de API permanecen en el backend y se configuran mediante variables de entorno.
 
-**Resultado:** una lista de afirmaciones con marcas de tiempo, estado y evidencia. La transcripción puede ser inmediata; las verificaciones llegan de forma asíncrona unos segundos después. La interfaz debe hacer visible esa diferencia.
+## Experiencia del producto
 
-### 3. Revisar al terminar
+### 1. Preparación
 
-Al finalizar la entrevista se presenta:
+Formulario breve con título de la entrevista, nombre y rol/organización de la persona entrevistada, información de contexto, temas a investigar y preguntas o enfoques clave. Todo este contexto debe llegar al flujo de análisis. Acción principal: **Iniciar entrevista**.
 
-- Resumen de los temas tratados.
-- Recuento de afirmaciones por estado.
-- Lista cronológica con filtros por estado.
-- Detalle de cada afirmación: cita original, participante si se conoce, momento, explicación y fuentes.
-- Verificaciones pendientes o inconclusas claramente identificadas.
+### 2. Entrevista en directo
 
-El resumen se construye a partir de las verificaciones guardadas. No debe introducir nuevos veredictos sin evidencia.
+Al iniciar, solicitar permiso para el micrófono, capturar audio y transmitirlo para obtener transcripción progresiva. El panel en directo tendrá tres áreas:
 
-**Resultado:** un informe revisable de la entrevista. La exportación se puede añadir si queda tiempo.
+- **Transcripción:** conversación reciente visible, afirmaciones detectadas resaltadas y separación de hablantes cuando sea posible.
+- **Verificación:** una tarjeta por afirmación relevante con afirmación original, estado, explicación breve, evidencia a favor o en contra, enlaces a las fuentes y nivel de confianza.
+- **Preguntas sugeridas:** preguntas concisas vinculadas a la afirmación, clasificadas como desafío, seguimiento o contexto, con botón para copiar.
 
-## MVP recomendado
+Estados de verificación: `SUPPORTED`, `CONTRADICTED`, `MISLEADING` y `UNVERIFIED`. La falta de evidencia se presenta como `UNVERIFIED`, nunca como falsedad. Mostrar estados de carga y error.
 
-Construir primero un recorrido completo y pequeño: preparar una sesión, introducir una entrevista, verificar unas pocas afirmaciones y consultar el resumen.
+La transcripción no debe esperar a la extracción, búsqueda o análisis. Procesar afirmaciones de forma asíncrona, descartar duplicados e ignorar opiniones, retórica y muletillas. Buscar tanto evidencia que respalde como que contradiga; priorizar fuentes primarias y fiables. No inventar fuentes, cifras ni URL.
 
-Incluido:
+### 3. Insights al finalizar
 
-- Aplicación web con las tres pantallas.
-- Formulario de contexto sencillo.
-- Un único idioma inicial: español.
-- Entrada de texto como alternativa para probar el flujo sin depender del micrófono.
-- Audio en directo con transcripción si el equipo consigue integrarlo a tiempo.
-- Detección de afirmaciones factuales y eliminación de duplicados.
-- Búsqueda de fuentes y verificación con enlaces.
-- Estados de espera, error y evidencia insuficiente.
-- Resumen final generado con los resultados de la sesión.
+Al pulsar **Terminar entrevista**, mostrar tarjetas KPI con el total de afirmaciones y recuentos por estado. Incluir hallazgos clave: declaraciones más controvertidas, contradicciones importantes, afirmaciones que requieren investigación adicional, preguntas sin responder y conclusiones principales. Mantenerlo en listas claras; sin gráficos complejos.
 
-Fuera del MVP:
-
-- Identificación automática de múltiples hablantes.
-- Extensión de navegador o integración con plataformas de videollamada.
-- Análisis de vídeo, gestos o emociones.
-- Puntuación global de credibilidad de una persona.
-- Registro de usuarios, pagos y colaboración entre organizaciones.
-- Cobertura exhaustiva de todas las afirmaciones de una entrevista.
-
-## Estructura técnica propuesta
-
-Mantener una sola aplicación web y un backend pequeño. Evitar separar servicios que el equipo tenga que desplegar y coordinar durante la hackathon.
+## Flujo técnico
 
 ```text
-Contexto de la sesión
-        |
-Audio -> Transcripción -> Segmentos de texto
-                              |
-                    Detección de afirmaciones
-                              |
-                    Cola de verificaciones
-                              |
-                    Búsqueda de evidencia
-                              |
-                    Evaluación con fuentes
-                              |
-                    Tarjetas en la interfaz
-                              |
-                    Resumen de la sesión
+Preparación y contexto ───────────────────────────────────────────┐
+                                                                  v
+Micrófono -> OpenAI Realtime -> transcripción -> extracción de afirmaciones
+                                             -> cola asíncrona (sin bloquear audio)
+                                             -> Tavily (evidencia a favor y en contra)
+                                             -> análisis OpenAI (veredicto y preguntas)
+                                             -> dashboard en directo -> insights finales
 ```
 
-El navegador captura audio y muestra los resultados. El backend gestiona las credenciales, llama a los proveedores de transcripción, búsqueda y evaluación, y guarda el estado de la sesión.
+Usar respuestas estructuradas para extracción y verificación. Mantener contratos TypeScript compartidos entre frontend y backend. Los enlaces mostrados deben proceder de resultados reales de búsqueda. Si no se encuentran pruebas fiables, devolver `UNVERIFIED`. El flujo debe tolerar errores de una verificación sin detener la transcripción.
 
-La cola limita las verificaciones simultáneas para controlar la latencia y el coste. Si una verificación falla, el resto de la entrevista debe continuar. Las afirmaciones repetidas reutilizan el resultado existente cuando mantienen el mismo contexto.
+## Contratos mínimos
 
-Elegir las tecnologías concretas según lo que ya domine el equipo. La primera decisión técnica debe ser comprobar que los proveedores elegidos permiten transcribir audio y recuperar evidencia consultable.
+- **Contexto de entrevista:** título, entrevistado, rol/organización, antecedentes, temas y preguntas/enfoques.
+- **Segmento de transcripción:** identificador, texto, estado final/provisional y hablante opcional.
+- **Afirmación:** identificador, cita original, afirmación normalizada, categoría/contexto e importancia.
+- **Verificación:** identificador de afirmación, estado, explicación, confianza, evidencias y preguntas sugeridas.
+- **Evidencia:** título, URL, resumen y postura (`supporting` o `contradicting`).
+- **Resumen:** estadísticas calculadas a partir de verificaciones y listas de hallazgos.
 
-## APIs de OpenAI propuestas
+Definir los tipos y eventos compartidos al inicio para que los módulos puedan integrarse en paralelo.
 
-Propuesta consultada en OpenAI Docs el 21 de noviembre de 2026. Es una arquitectura para validar durante la hackathon; todavía no se han probado las APIs con las credenciales del equipo. Confirmar acceso a modelos, límites y presupuesto antes de implementar.
+## Prioridades
 
-### Selección por fase
+### P0 — Imprescindible
 
-| Fase / tarea | API o herramienta | Uso propuesto en Crosscheck |
+1. Captura de micrófono.
+2. Transcripción en tiempo real.
+3. Extracción de afirmaciones factuales.
+4. Búsqueda web mediante Tavily.
+5. Verificación basada en evidencia.
+6. Actualizaciones del dashboard en directo.
+
+### P1 — Importante
+
+1. Pantalla para preparar la entrevista.
+2. Preguntas de seguimiento sugeridas.
+3. Contexto de entrevista integrado en el análisis.
+4. Resumen al finalizar.
+
+### P2 — Solo si P0 y P1 funcionan
+
+Identificación de hablantes, estadísticas avanzadas, animaciones, historial persistente y exportación.
+
+## Reparto de trabajo
+
+| Persona | Área | Entrega e integración |
 | --- | --- | --- |
-| Preparación | Responses API | Convertir el contexto introducido en una ficha de temas, entidades y referencias temporales. |
-| Entrevista: audio | Realtime API en modo transcripción, con `gpt-live-transcribe` | Obtener texto incremental para la pantalla y texto final para procesar afirmaciones. |
-| Entrevista: extracción | Responses API con Structured Outputs | Producir una lista de afirmaciones autocontenidas, sus citas originales y los segmentos de origen. |
-| Entrevista: evidencia | Responses API con la herramienta `web_search` | Buscar información externa para contrastar cada afirmación y recuperar sus citas y fuentes. |
-| Entrevista: veredicto | Responses API con Structured Outputs | Convertir la evidencia recuperada en el contrato de verificación de la aplicación. |
-| Cierre | Responses API con Structured Outputs | Redactar el resumen a partir de las verificaciones guardadas. Los recuentos los calcula el backend. |
+| 1 | Preparación y cierre | Formulario de contexto e insights finales |
+| 2 | Dashboard en directo | Transcripción, tarjetas de verificación y preguntas |
+| 3 | Audio | Captura de micrófono e integración con Realtime |
+| 4 | Análisis | Extracción, Tavily, evidencia y preguntas sugeridas |
+| 5 | Backend e integración | Express, contratos, estado en memoria y conexión de módulos |
 
-Para arrancar, proponemos `gpt-6.2-astra` en las llamadas de texto: la guía oficial de búsqueda lo utiliza para nuevas integraciones. Es una elección inicial por simplicidad, no un resultado de pruebas de coste o latencia. Mantener los modelos configurables por tarea y ajustar después de medir el recorrido completo. [Documentación de búsqueda web](https://developers.openai.com/api/docs/guides/tools-web-search).
+Todo el equipo acuerda primero los tipos de datos y los eventos de integración. No reescribir código que ya funciona.
 
-### Audio: integración concreta
+## Secuencia de trabajo
 
-Propuesta de MVP: navegador → backend por WebSocket → OpenAI por WebSocket. La clave estándar permanece en el servidor. El backend también distribuye transcripciones y resultados al navegador.
+### 0:00–0:30 — Base compartida
 
-La conexión de transcripción del servidor utiliza `wss://api.openai.com/v1/realtime?intent=transcription`. Se configura una sesión de tipo `transcription` con `gpt-live-transcribe`. Este modelo requiere que la aplicación marque el cierre de los turnos; usar detección de silencio del cliente y enviar `input_audio_buffer.commit`. No configurar `server_vad` ni `semantic_vad` para este modelo.
+- Confirmar el contrato de datos y las interfaces entre módulos.
+- Preparar la aplicación y el backend con el stack acordado.
+- Comprobar credenciales y una llamada mínima a los servicios externos.
+- Acordar variables de entorno; no incluir claves en el frontend.
 
-Mostrar los eventos `conversation.item.input_audio_transcription.delta` y procesar los eventos `conversation.item.input_audio_transcription.completed`. Relacionarlos mediante `item_id`, ya que los turnos pueden terminar de transcribirse fuera de orden. Las marcas de tiempo de la aplicación deben proceder del audio capturado, sin asumir alineación exacta por palabra. [Documentación de transcripción en tiempo real](https://developers.openai.com/api/docs/guides/realtime-transcription).
+### 0:30–1:30 — Camino de verificación
 
-### Evidencia y veredicto: dos pasos
+- Implementar extracción de afirmaciones y deduplicación.
+- Conectar búsqueda de Tavily y análisis de evidencia.
+- Mostrar una tarjeta con estado, fuentes y preguntas.
+- Mantener la transcripción independiente del trabajo asíncrono de verificación.
 
-1. Buscar con Responses API y `tools: [{ type: "web_search" }]`. Pedir contraste explícito de la afirmación, respetando fecha, país y significado. Guardar las anotaciones de citas y las fuentes devueltas por la herramienta. No dar por completada una búsqueda si no aparece una llamada a la herramienta en la respuesta.
-2. En una llamada independiente, pasar la evidencia recuperada al evaluador y solicitar JSON mediante Structured Outputs. Separar estos pasos permite revisar las fuentes antes de publicarlas y no depender de que búsqueda y formato estricto se puedan combinar en una sola petición.
+### 1:30–2:30 — Audio y pantallas
 
-Usar `gpt-6.2-astra` también para este primer evaluador es una propuesta del equipo pendiente de ensayo. Pedir que devuelva `insufficient_evidence` cuando la evidencia no permita concluir. La interfaz debe conservar enlaces consultables junto a cada resultado. Las fuentes web son datos externos: no deben poder cambiar las instrucciones del verificador.
+- Integrar captura y transcripción progresiva.
+- Conectar la pantalla de preparación y pasar su contexto.
+- Integrar las tres áreas del dashboard.
+- Añadir acción de terminar y resumen sencillo.
 
-### Contratos estructurados
+### 2:30–3:00 — Integración completa
 
-En Responses API, definir `text.format` con `type: "json_schema"`, `strict: true` y un esquema compatible. Structured Outputs controla la forma de la respuesta; no garantiza la veracidad del contenido. Gestionar también rechazos y respuestas incompletas. [Documentación de Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs).
+- Conectar los módulos y resolver fallos del recorrido principal.
+- Añadir estados de carga, error y `UNVERIFIED`.
+- Verificar que una búsqueda fallida no detiene la transcripción.
 
-Contratos propuestos:
+### 3:00–4:00 — Pruebas, pulido y demo
 
-- **Extractor:** `claims[]` con `originalQuote`, `normalizedClaim`, `segmentIds` y `needsMoreContext`.
-- **Evaluador:** `claimId`, `status`, `explanation` y `evidenceRefs[]`.
-- **Resumen:** `overview`, `topics[]` y `highlightedClaimIds[]`.
+- Ensayar el flujo completo de preparación a insights.
+- Pulir jerarquía visual, legibilidad y estados de carga.
+- No iniciar funcionalidades P2 ni cambios de arquitectura en esta hora.
+- Dejar preparada una alternativa de demo si falla la conectividad.
 
-El backend asigna identificadores a las evidencias y valida que cada `evidenceRef` exista. Los enlaces publicados proceden del registro de fuentes recuperadas, no de URLs inventadas por el evaluador. También valida los identificadores de afirmaciones usados en el resumen.
+## Guion de demo
 
-### Qué integrar primero
+Preparar una entrevista breve que incluya una afirmación verificablemente cierta, una demostrablemente falsa y una engañosa o dependiente del contexto. Mostrar:
 
-1. Una llamada real de texto → afirmaciones estructuradas.
-2. Una afirmación → búsqueda → evidencia → veredicto estructurado.
-3. Varias verificaciones guardadas → resumen.
-4. Conectar transcripción en directo al mismo flujo.
+1. Creación de la entrevista con contexto.
+2. Inicio de la grabación y transcripción progresiva.
+3. Detección de una afirmación.
+4. Resultado con evidencia y enlaces.
+5. Pregunta sugerida copiable.
+6. Fin de la entrevista e insights con recuentos.
 
-Al principio, mantener una cola con concurrencia baja y deduplicación. Medir latencia de transcripción, extracción y verificación por separado. Establecer límites por sesión y revisar el consumo real; no prometer una latencia ni un coste antes de probarlos.
-
-No hace falta introducir embeddings, fine-tuning, una base vectorial ni un framework de agentes para este MVP. Si más adelante hay muchos documentos de contexto, evaluar File Search como ampliación; para empezar basta con contexto breve proporcionado por el usuario.
-
-## Contrato mínimo de datos
-
-Definir este contrato juntos antes de repartir la implementación:
-
-### Sesión
-
-- `id`, `title`, `topic`, `participants`, `context`.
-- `status`: `draft`, `live` o `finished`.
-- `startedAt`, `endedAt`.
-
-### Segmento de transcripción
-
-- `id`, `sessionId`, `text`.
-- `startMs`, `endMs`, `speaker` opcional.
-- `isFinal`: indica si el texto ya no es una transcripción provisional.
-
-### Afirmación y verificación
-
-- `id`, `sessionId`, `segmentIds`.
-- `originalQuote`: cita literal de la entrevista.
-- `normalizedClaim`: afirmación autocontenida que se puede contrastar.
-- `speaker` opcional, `startMs`.
-- `status`: `checking`, `supported`, `refuted`, `needs_context` o `insufficient_evidence`.
-- `explanation`, `sources`, `checkedAt`.
-- Cada fuente incluye `title`, `url`, `publisher`, `publishedAt` si se conoce y el fragmento de evidencia utilizado.
-
-Mantener separados la cita original y el texto normalizado permite comprobar que la verificación responde a lo que realmente se dijo.
-
-## Reparto para cinco personas
-
-| Persona | Responsabilidad principal | Entrega |
-| --- | --- | --- |
-| 1 | Experiencia y frontend: preparación y resumen | Crear sesión, navegar entre fases y consultar el informe. |
-| 2 | Frontend en directo | Transcripción, tarjetas de verificación, estados y conexión con eventos del backend. |
-| 3 | Audio y transcripción | Captura de micrófono, integración de transcripción y segmentos finales con marcas de tiempo. |
-| 4 | Detección y verificación | Extraer afirmaciones, buscar evidencia y producir resultados estructurados con fuentes. |
-| 5 | Backend e integración | Sesiones, persistencia, cola, comunicación con el frontend, despliegue y coordinación de la demo. |
-
-La persona 5 coordina la integración, pero cada persona integra y prueba su parte. Las personas 3 y 4 trabajan con el mismo contrato de segmentos; las personas 1 y 2 comparten componentes y el contrato de sesión.
-
-## Orden de trabajo
-
-### Hito 1 — Acordar y conectar
-
-- Confirmar duración de la hackathon y experiencia del equipo.
-- Elegir stack y proveedores; comprobar credenciales y una llamada real a cada servicio.
-- Acordar contratos de datos y eventos.
-- Montar el repositorio y una primera aplicación desplegada.
-- Preparar datos de ejemplo compartidos para que el frontend avance en paralelo.
-
-### Hito 2 — Completar el flujo con texto
-
-- Crear una sesión con contexto.
-- Introducir texto y detectar una afirmación.
-- Buscar evidencia y mostrar un resultado con fuentes.
-- Finalizar la sesión y mostrar su resumen.
-
-Este es el primer punto de integración: debe existir antes de invertir tiempo en detalles visuales o funciones adicionales.
-
-### Hito 3 — Conectar el audio
-
-- Capturar el micrófono con consentimiento explícito.
-- Mostrar transcripción provisional y final.
-- Enviar únicamente segmentos finales a detección.
-- Gestionar desconexiones y permitir continuar mediante texto.
-
-### Hito 4 — Preparar la demo
-
-- Probar el recorrido completo en el entorno desplegado.
-- Ajustar legibilidad y estados de carga.
-- Ensayar una entrevista breve con afirmaciones contrastables.
-- Preparar una sesión de ejemplo con resultados guardados, identificada como demo, para fallos de conectividad.
-
-Reservar aproximadamente el último 20 % del tiempo disponible para integración, pruebas y ensayo. No añadir nuevas funciones durante ese tramo salvo que sean necesarias para completar el recorrido.
+La demo debe priorizar fiabilidad sobre cantidad de funciones.
 
 ## Criterios de éxito
 
-- Se puede completar el recorrido de las tres fases sin asistencia técnica.
-- Una afirmación queda vinculada a su cita original y momento de la entrevista.
-- Cada veredicto concluyente presenta evidencia y fuentes accesibles.
-- La ausencia de evidencia se muestra como tal, sin forzar una respuesta binaria.
-- La entrevista continúa mientras hay verificaciones pendientes.
-- El resumen conserva los resultados y fuentes mostrados durante la sesión.
-- Los fallos de audio o de un proveedor tienen un estado visible y una alternativa para continuar.
-
-## Riesgos y decisiones pendientes
-
-- **Latencia:** medir el tiempo entre el segmento final y la tarjeta verificada. Priorizar pocas afirmaciones relevantes si se acumulan pendientes.
-- **Calidad de evidencia:** preferir fuentes primarias, comprobar fechas y contexto geográfico y temporal. Una URL por sí sola no demuestra que la fuente respalde el veredicto.
-- **Errores de transcripción:** permitir revisar la cita que originó cada resultado y evitar verificar texto provisional.
-- **Privacidad:** informar de la captura y del envío de audio a proveedores; para el MVP, evitar conservar audio bruto por defecto.
-- **Alcance:** decidir si la demo necesita audio en vivo o si puede empezar con una entrevista introducida como texto.
-- **Tiempo y presupuesto:** quedan por confirmar la duración de la hackathon, los límites de API y las herramientas que ya conoce cada persona.
-
-## Guion de demo sugerido
-
-1. Crear una sesión indicando tema, participantes y contexto.
-2. Iniciar una entrevista breve con dos o tres afirmaciones comprobables.
-3. Mostrar la transcripción y la aparición progresiva de verificaciones.
-4. Abrir una tarjeta para consultar su evidencia.
-5. Finalizar y recorrer el resumen, incluyendo una afirmación sin evidencia suficiente si existe.
-
-La propuesta central de Crosscheck es convertir una conversación en afirmaciones revisables con evidencia, durante y después de la entrevista.
+- Se completa el flujo de preparación, entrevista en directo e insights.
+- El audio sigue transcribiéndose mientras se verifican afirmaciones.
+- Las tarjetas contienen fuentes consultables cuando hay evidencia disponible.
+- La ausencia de pruebas suficientes aparece como `UNVERIFIED`.
+- Las preguntas son específicas y están ligadas a afirmaciones.
+- La aplicación sigue siendo comprensible y usable ante errores de API.
