@@ -1,0 +1,62 @@
+/* Entrance animations for the live dashboard. CSS animations run once when an
+   element mounts, so stable React keys decide what animates. */
+
+.live-word {
+  /* Inline (not inline-block) so claim underlines keep propagating to words;
+     relative positioning lets the offset animate on inline boxes. */
+  position: relative;
+  animation: live-word-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--live-word-delay, 0ms);
+}
+
+@keyframes live-word-enter {
+  from { opacity: 0; top: 0.35em; }
+  to { opacity: 1; top: 0; }
+}
+
+.live-segment-enter {
+  animation: live-segment-enter 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes live-segment-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.live-badge-enter {
+  display: inline-block;
+  animation: live-badge-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes live-badge-enter {
+  from { opacity: 0; transform: translateY(2px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.live-card-enter {
+  animation: live-card-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes live-card-enter {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.live-fade-enter {
+  animation: live-fade-enter 200ms ease-out both;
+}
+
+@keyframes live-fade-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-word,
+  .live-segment-enter,
+  .live-badge-enter,
+  .live-card-enter,
+  .live-fade-enter {
+    animation: none;
+  }
+}
