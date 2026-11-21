@@ -2,12 +2,18 @@ import cors from 'cors'
 import express from 'express'
 import type { ErrorRequestHandler } from 'express'
 import { apiRoutes } from './routes/api.ts'
+import { preparationRoutes } from './routes/preparation.ts'
 import { ApiError } from './routes/validation.ts'
 import { DEFAULT_JOB_TIMEOUT_MS, InterviewStore } from './services/interviewStore.ts'
 import { unavailablePipeline } from './services/pipelineAdapter.ts'
+import { createPreparationParserFromEnv, type ParsePreparation } from './services/preparationParser.ts'
 import type { AiPipeline } from './types/pipeline.ts'
 
-export function createApp(pipeline: AiPipeline = unavailablePipeline, timeoutMs = DEFAULT_JOB_TIMEOUT_MS) {
+export function createApp(
+  pipeline: AiPipeline = unavailablePipeline,
+  timeoutMs = DEFAULT_JOB_TIMEOUT_MS,
+  parsePreparation: ParsePreparation = createPreparationParserFromEnv(),
+) {
   const app = express()
   const store = new InterviewStore(pipeline, timeoutMs)
   app.disable('x-powered-by')
@@ -17,6 +23,7 @@ export function createApp(pipeline: AiPipeline = unavailablePipeline, timeoutMs 
     res.json({ status: 'ok', service: 'crosscheck-api', pipeline: pipeline === unavailablePipeline ? 'unavailable' : 'connected' })
   })
   app.use('/api', apiRoutes(store))
+  app.use('/api', preparationRoutes(parsePreparation))
   app.use((_req, _res, next) => { next(new ApiError(404, 'NOT_FOUND', 'Endpoint not found.')) })
   const errors: ErrorRequestHandler = (error, _req, res, _next) => {
     if (error instanceof ApiError) { res.status(error.status).json({ error: { code: error.code, message: error.message } }); return }
