@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { PreparationPage, type PreparedInterview } from './pages/PreparationPage'
 import { InsightsPage } from './features/insights/InsightsPage'
 import { LiveDashboard } from './features/live/LiveDashboard'
@@ -19,6 +19,8 @@ function pageFromLocation(): Page {
 function App() {
   const [page, setPage] = useState<Page>(pageFromLocation)
   const [interview, setInterview] = useState<PreparedInterview | null>(null)
+  // Set when the user presses Start interview; recording starts as soon as the backend session is ready.
+  const autoStart = useRef(false)
   const live = useLiveInterview(interview)
   const speakerNames = useSpeakerNames(interview?.interviewees ?? noParticipants, live.transcript)
 
@@ -31,6 +33,13 @@ function App() {
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
 
+  const { connectionStatus, recordingStatus, start: startRecording } = live
+  useEffect(() => {
+    if (!autoStart.current || connectionStatus !== 'connected' || recordingStatus !== 'idle') return
+    autoStart.current = false
+    startRecording()
+  }, [connectionStatus, recordingStatus, startRecording])
+
   function navigate(nextPage: Page) {
     const path = nextPage === 'interview' ? '/interview' : nextPage === 'insights' ? '/insights' : '/'
     window.history.pushState({ page: nextPage }, '', path)
@@ -39,6 +48,7 @@ function App() {
 
   function startInterview(context: PreparedInterview) {
     setInterview(context)
+    autoStart.current = true
     navigate('interview')
   }
 
