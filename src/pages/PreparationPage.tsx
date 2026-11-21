@@ -269,6 +269,13 @@ export function PreparationPage({ onStart }: PreparationPageProps) {
             {!editingNotes && <button type="button" onClick={() => { if (!notes.length) addNote(); setEditingNotes(true) }} className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">+ Add</button>}
           </div>
         </section>
+
+        <div className="sticky bottom-0 z-10 -mx-5 mt-6 w-[calc(100%+2.5rem)] border-t border-slate-200 bg-white/95 px-5 py-3 backdrop-blur sm:static sm:mx-0 sm:w-full sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+          <button type="button" onClick={handleStartClick} disabled={microphoneStatus === 'requesting'} aria-label={microphoneStatus === 'ready' ? 'Start interview' : 'Enable microphone to start interview'} className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-70">
+            {microphoneStatus === 'requesting' ? <LoaderCircle size={16} className="animate-spin" /> : <span className="h-2.5 w-2.5 rounded-full bg-white" aria-hidden="true" />}
+            {microphoneStatus === 'ready' ? 'Start interview' : microphoneStatus === 'requesting' ? 'Checking microphone' : 'Enable microphone'}
+          </button>
+        </div>
       </div>
     </main>
   )
