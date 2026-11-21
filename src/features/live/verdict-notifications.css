@@ -1,0 +1,45 @@
+/* Claim notification motion: toast entrance and the pulse a transcript segment
+   gets when its verdict lands (or when it is revealed from a toast or counter). */
+
+.verdict-toast-enter {
+  animation: verdict-toast-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes verdict-toast-enter {
+  from { opacity: 0; transform: translateX(16px) scale(0.98); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+.verdict-flash {
+  border-radius: 0.75rem;
+  animation: verdict-flash 2.4s ease-out both;
+}
+
+@keyframes verdict-flash {
+  0%, 30%, 60% { background-color: rgb(250 204 21 / 0.28); box-shadow: 0 0 0 6px rgb(250 204 21 / 0.28); }
+  15%, 45% { background-color: rgb(250 204 21 / 0.08); box-shadow: 0 0 0 6px rgb(250 204 21 / 0.08); }
+  100% { background-color: transparent; box-shadow: 0 0 0 6px transparent; }
+}
+
+.verdict-flash .live-badge-enter > * {
+  animation: verdict-badge-pulse 0.6s ease-in-out 3;
+}
+
+@keyframes verdict-badge-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.18); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .verdict-toast-enter,
+  .verdict-flash .live-badge-enter > * {
+    animation: none;
+  }
+
+  /* Keep a static highlight for the flash duration instead of pulsing. */
+  .verdict-flash {
+    animation: none;
+    background-color: rgb(250 204 21 / 0.2);
+    box-shadow: 0 0 0 6px rgb(250 204 21 / 0.2);
+  }
+}

@@ -19,6 +19,10 @@ import type { InterviewConnectionStatus } from '../../hooks/useLiveInterview'
 import type { SpeakerCandidate, SpeakerIdentity } from '../../lib/speakers'
 import { AnimatedText } from './AnimatedText'
 import { formatTimestamp } from './mock-data'
+import { SoundToggle } from './SoundToggle'
+import { useVerdictNotifications } from './useVerdictNotifications'
+import { VerdictCounter } from './VerdictCounter'
+import { VerdictToasts } from './VerdictToasts'
 
 export type RecordingStatus = 'idle' | 'connecting' | 'recording' | 'stopping' | 'error'
 
@@ -88,6 +92,7 @@ export function LiveDashboard({
   const [copiedText, setCopiedText] = useState<string | null>(null)
   const activeAlert = checks.find((check) => check.id === alertId)
   const failedExtractions = new Map(jobs.filter((job) => job.kind === 'extraction' && job.status === 'failed' && job.segmentId).map((job) => [job.segmentId, job.error]))
+  const notifications = useVerdictNotifications(checks, connectionStatus)
   const transcript = showAllTranscript ? fullTranscript : fullTranscript.slice(-5)
   const speakerByLabel = new Map(speakers.map((speaker) => [speaker.label, speaker]))
   const isRecording = recordingStatus === 'recording' || recordingStatus === 'connecting'
@@ -122,6 +127,20 @@ export function LiveDashboard({
     }
   }
 
+  // Opens a claim's detail from a notification and brings its segment into view.
+  function openClaim(claimId: string) {
+    const check = checks.find(({ id }) => id === claimId)
+    if (!check) return
+    notifications.dismissClaim(claimId)
+    setShowAllTranscript(true)
+    if (check.status === 'SUPPORTED') setInfoId(claimId)
+    else if (check.status !== 'CHECKING') {
+      setInfoId(null)
+      setAlertId(claimId)
+    }
+    window.requestAnimationFrame(() => notifications.reveal(claimId))
+  }
+
   async function copyText(text: string) {
     try {
       await navigator.clipboard.writeText(text)
@@ -144,6 +163,7 @@ export function LiveDashboard({
               <span className="text-slate-500">{connectionStatus === 'creating' ? 'Creating interview…' : connectionStatus === 'connecting' ? 'Connecting…' : connectionStatus === 'reconnecting' ? 'Reconnecting…' : connectionStatus === 'error' ? 'Backend unavailable' : isPaused ? 'Transcription paused' : 'Transcribing'}</span>
             </div>
           </div>
+          <div className="ml-auto hidden sm:block"><VerdictCounter checks={checks} onReveal={notifications.reveal} /></div>
           <button onClick={onEndInterview} disabled={ending || connectionStatus === 'creating'} className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-red-600 px-3.5 py-2.5 text-xs font-bold text-white shadow-[0_3px_10px_rgba(220,38,38,0.22)] transition hover:bg-red-700 disabled:opacity-60 sm:px-4 sm:text-sm">
             {ending ? <LoaderCircle size={12} className="animate-spin" /> : <Square size={12} fill="currentColor" />} <span className="hidden sm:inline">{ending ? 'Ending…' : 'End interview'}</span><span className="sm:hidden">End</span>
           </button>
@@ -204,7 +224,7 @@ export function LiveDashboard({
                 </div>
 
                 {claim ? (
-                  <div className="relative">
+                  <div data-claim-id={claim.id} data-claim-status={claim.status} className={`relative scroll-mt-28 ${notifications.isFlashing(claim.id) ? 'verdict-flash' : ''}`}>
                     <span className={`text-[16px] leading-[1.8] sm:text-[17px] transition-colors duration-300 ${claim.status === 'CHECKING' ? 'text-slate-500' : 'text-slate-900'}`}>
                       <span className={claimUnderline(claim.status)}><AnimatedText id={segment.id} text={segment.text} /></span>
                       {' '}
@@ -234,7 +254,7 @@ export function LiveDashboard({
       </section>
 
       <footer className="fixed bottom-0 left-0 right-0 z-30 flex h-12 items-center justify-between border-t border-slate-200 bg-white px-5 sm:px-7">
-        <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-600"><AudioLines size={17} className="text-slate-700" /><span>{isPaused ? 'Paused' : 'Listening…'}</span>{isRecording ? <button onClick={onStopRecording} aria-label="Pause transcription" className="ml-1 rounded p-1 text-slate-400 hover:bg-slate-100"><Pause size={12} /></button> : <button onClick={onStartRecording} disabled={!canRecord || recordingStatus === 'stopping'} aria-label="Start recording" className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-1 text-red-700 hover:bg-red-50 disabled:opacity-50"><Mic size={12} />{fullTranscript.length ? 'Resume' : 'Start recording'}</button>}</div>
+        <div className="flex items-center gap-2 text-[10px] font-semibold text-slate-600"><AudioLines size={17} className="text-slate-700" /><span>{isPaused ? 'Paused' : 'Listening…'}</span>{isRecording ? <button onClick={onStopRecording} aria-label="Pause transcription" className="ml-1 rounded p-1 text-slate-400 hover:bg-slate-100"><Pause size={12} /></button> : <button onClick={onStartRecording} disabled={!canRecord || recordingStatus === 'stopping'} aria-label="Start recording" className="ml-1 inline-flex items-center gap-1 rounded px-1.5 py-1 text-red-700 hover:bg-red-50 disabled:opacity-50"><Mic size={12} />{fullTranscript.length ? 'Resume' : 'Start recording'}</button>}<SoundToggle enabled={notifications.soundEnabled} onChange={notifications.setSoundEnabled} /></div>
         <div className="flex items-center gap-3.5 text-[9px] text-slate-500 sm:gap-5 sm:text-[10px]">
           <span className="inline-flex items-center gap-1.5"><span className="w-4 border-b-2 border-dotted border-slate-400" /><span className="hidden sm:inline">Checking</span><span className="sm:hidden">Check</span></span>
           <span className="inline-flex items-center gap-1.5"><span className="w-4 border-b-2 border-emerald-600" />Correct</span>
@@ -242,6 +262,7 @@ export function LiveDashboard({
         </div>
       </footer>
 
+      <VerdictToasts toasts={notifications.toasts} copiedText={copiedText} onDismiss={notifications.dismiss} onView={openClaim} onCopy={copyText} />
       {activeAlert && <FactAlertModal key={activeAlert.id} check={activeAlert} intervieweeName={intervieweeName} copiedText={copiedText} onCopy={copyText} onDismiss={() => setAlertId(null)} />}
     </main>
   )
