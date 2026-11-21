@@ -49,30 +49,30 @@ export function DictationPanel({ phase, transcript, error, filledSummary, onStar
           disabled={busy}
           aria-pressed={listening}
           aria-label={listening ? 'Stop dictation' : 'Dictate interview context'}
-          className={`relative grid h-11 w-11 shrink-0 place-items-center rounded-full text-white shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-70 ${listening ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-700 hover:bg-emerald-800'}`}
+          className={`relative grid h-12 w-12 shrink-0 place-items-center rounded-full text-white shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-70 ${listening ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-700 hover:bg-emerald-800'}`}
         >
           <span key={icon} className="prep-pop">
             {icon === 'loading'
-              ? <LoaderCircle size={18} className="animate-spin" />
-              : icon === 'stop' ? <Square size={15} fill="currentColor" /> : <Mic size={19} />}
+              ? <LoaderCircle size={21} className="animate-spin" />
+              : icon === 'stop' ? <Square size={17} fill="currentColor" /> : <Mic size={22} />}
           </span>
         </button>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-900" role="status" aria-live="polite"><span key={phase} className="prep-fade">{phaseLabel[phase]}</span></p>
-          <p className="text-[11px] leading-4 text-slate-500"><span key={hint} className="prep-fade">{hint}</span></p>
+          <p className="text-base font-semibold text-slate-900" role="status" aria-live="polite"><span key={phase} className="prep-fade">{phaseLabel[phase]}</span></p>
+          <p className="text-xs leading-5 text-slate-500 sm:text-sm"><span key={hint} className="prep-fade">{hint}</span></p>
         </div>
       </div>
 
       <Collapsible open={active} className="pt-3">
-        <p ref={transcriptRef} className={`max-h-28 overflow-y-auto rounded-lg border border-emerald-100 bg-white px-3 py-2 text-xs leading-5 text-slate-700 transition-opacity duration-300 ${busy ? 'opacity-70' : ''}`} aria-label="Dictation transcript">
+        <p ref={transcriptRef} className={`max-h-32 overflow-y-auto rounded-lg border border-emerald-100 bg-white px-3 py-2 text-sm leading-6 text-slate-700 transition-opacity duration-300 2xl:text-base ${busy ? 'opacity-70' : ''}`} aria-label="Dictation transcript">
           {transcript
             ? <AnimatedText id={`dictation-${session.count}`} text={transcript} />
             : <span key={listening ? 'listening' : 'waiting'} className="prep-fade text-slate-400">{listening ? 'Listening… e.g. “I’m interviewing Ana López, mayor of Valencia, about housing and rent prices.”' : 'Waiting for the transcript…'}</span>}
         </p>
       </Collapsible>
 
-      {error && phase === 'idle' && <p className="prep-enter mt-2 flex items-start gap-1.5 text-xs text-rose-700" role="alert"><AlertCircle size={13} className="mt-0.5 shrink-0" />{error}</p>}
-      {!error && filledSummary && phase === 'idle' && <p className="prep-enter mt-2 flex items-center gap-1.5 text-xs text-emerald-800"><Check size={13} />{filledSummary} Review below before starting.</p>}
+      {error && phase === 'idle' && <p className="prep-enter mt-2 flex items-start gap-2 text-sm text-rose-700" role="alert"><AlertCircle size={17} className="mt-0.5 shrink-0" />{error}</p>}
+      {!error && filledSummary && phase === 'idle' && <p className="prep-enter mt-2 flex items-center gap-2 text-sm text-emerald-800"><Check size={17} />{filledSummary} Review below before starting.</p>}
     </div>
   )
 }

@@ -8,9 +8,9 @@ export function SoundToggle({ enabled, onChange }: { enabled: boolean; onChange:
       aria-checked={enabled}
       onClick={() => onChange(!enabled)}
       title={enabled ? 'Mute alert sound' : 'Play a sound for false or misleading claims'}
-      className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10px] font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+      className="inline-flex items-center gap-1.5 rounded px-2 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-800 sm:text-sm"
     >
-      {enabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
+      {enabled ? <Volume2 size={17} /> : <VolumeX size={17} />}
       <span className="hidden sm:inline">Sound</span>
     </button>
   )
