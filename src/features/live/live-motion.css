@@ -5,7 +5,7 @@
   /* Inline (not inline-block) so claim underlines keep propagating to words;
      relative positioning lets the offset animate on inline boxes. */
   position: relative;
-  animation: live-word-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: live-word-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
   animation-delay: var(--live-word-delay, 0ms);
 }
 
@@ -15,7 +15,7 @@
 }
 
 .live-segment-enter {
-  animation: live-segment-enter 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: live-segment-enter 280ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 @keyframes live-segment-enter {
@@ -25,7 +25,7 @@
 
 .live-badge-enter {
   display: inline-block;
-  animation: live-badge-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: live-badge-enter 240ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 @keyframes live-badge-enter {
@@ -34,7 +34,7 @@
 }
 
 .live-card-enter {
-  animation: live-card-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: live-card-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 @keyframes live-card-enter {
