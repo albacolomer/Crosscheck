@@ -53,4 +53,4 @@ Pages compose feature components. Keep screen state with its owner and state sha
 ## Planned analysis integrations
 
 - Use the OpenAI Responses API with Structured Outputs to extract factual claims from final transcript segments and generate evidence-based verdicts and follow-up questions. Keep analysis asynchronous so transcription continues during verification. [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
-- Use Tavily to find supporting and contradicting evidence. Cite URLs from actual results and return `UNVERIFIED` when reliable evidence is insufficient. The optional OpenAI Decisions API can prioritize claims for verification. Evidence analysis determines the verdict. [Decisions API](https://developers.openai.com/api/docs/guides/decisions)
+- Use Tavily to find supporting and contradicting evidence. Cite URLs from actual results and return `UNVERIFIED` when reliable evidence is insufficient. The OpenAI Decisions API (`gpt-6-luna`) decides whether each final segment is checkable before claim extraction. Evidence analysis determines the verdict. [Decisions API](https://developers.openai.com/api/docs/guides/decisions)

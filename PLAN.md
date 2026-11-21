@@ -123,10 +123,11 @@ Agree on shared types and integration events before building the modules. Reuse 
 | P4-D | Implemented | `summaryGenerator.ts`, used by `GET /api/interviews/:id/summary` |
 | P4-E | Implemented | `pipeline/openaiProvider.ts` (20 s cap per call), `factCheckPipeline.ts` |
 | P4-F | Implemented | default export of `factCheckPipeline.ts`, loaded by default; store passes up to 6 preceding final segments; job timeout 45 s |
+| Gate | Implemented | `checkabilityGate.ts`: one OpenAI Decisions API call per final segment decides whether it is checkable before extraction (see the handoff §0) |
 
 **Verified:** `npm run lint`, `npm run build`, and `npx tsc -p tsconfig.node.json --noEmit` pass. Backend smoke run with real OpenAI and Tavily keys: two final segments posted over REST were extracted, searched and judged (the Eiffel Tower height/date claim came back `SUPPORTED` with Britannica, Wikipedia and the official site as evidence); the summary endpoint reconciled the counts. With an empty `TAVILY_API_KEY` the server still boots and the check job fails with `CONFIGURATION: Tavily API key is not configured.`, excluded from the summary.
 
-**Not verified:** the browser journey (microphone, live transcription into the dashboard, insights page rendering), misleading/contradicted live scenarios, recording-restart chronology, and extraction quality across longer conversations. The extractor can still emit weak claims (for example, the speaker's own location).
+**Not verified:** the browser journey (microphone, live transcription into the dashboard, insights page rendering), misleading/contradicted live scenarios, recording-restart chronology, and extraction quality across longer conversations. Weak claims such as the speaker's own name or location are now filtered by the checkability gate and the extractor prompt.
 
 Person 4 remains accountable for analysis, but can delegate the packages below to teammates who have finished their original areas. Assign one human owner to each package before starting. A contributor's original team number does not change the edit boundaries of their assigned package.
 
