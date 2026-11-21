@@ -136,7 +136,7 @@ export function LiveDashboard({ onEndInterview }: LiveDashboardProps) {
 function claimUnderline(status: ClaimCheck['status']) {
   if (status === 'SUPPORTED') return 'underline decoration-emerald-600 decoration-2 underline-offset-[5px]'
   if (status === 'CHECKING') return 'underline decoration-dotted decoration-slate-400 decoration-2 underline-offset-[5px]'
-  if (status === 'UNVERIFIED') return 'underline decoration-dotted decoration-violet-500 decoration-2 underline-offset-[5px]'
+  if (status === 'UNVERIFIED') return 'underline decoration-wavy decoration-orange-500 decoration-2 underline-offset-[5px]'
   return 'underline decoration-wavy decoration-red-600 decoration-2 underline-offset-[5px]'
 }
 
@@ -148,7 +148,8 @@ function ClaimStatusButton({ check, infoOpen, onClick }: { check: ClaimCheck; in
     return <button onClick={onClick} aria-expanded={infoOpen} className="ml-1 inline-flex translate-y-[-1px] items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 align-middle text-[9px] font-semibold text-emerald-800 hover:bg-emerald-100"><CircleCheck size={11} />Info</button>
   }
   const statusLabel = check.status === 'CONTRADICTED' ? 'False' : check.status === 'MISLEADING' ? 'Misleading' : 'Uncertain'
-  return <button onClick={onClick} className="ml-1 inline-flex translate-y-[-1px] items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 align-middle text-[9px] font-bold text-white hover:bg-red-700"><AlertTriangle size={10} />{statusLabel} · View</button>
+  const tone = check.status === 'UNVERIFIED' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-red-600 hover:bg-red-700'
+  return <button onClick={onClick} className={`ml-1 inline-flex translate-y-[-1px] items-center gap-1 rounded-full px-2 py-0.5 align-middle text-[9px] font-bold text-white ${tone}`}><AlertTriangle size={10} />{statusLabel} · View</button>
 }
 
 type InfoTab = 'context' | 'sources' | 'questions'
@@ -186,48 +187,49 @@ function ClaimInfoPopover({ check, copiedText, onCopy, onClose }: { check: Claim
 
 function FactAlertModal({ check, copiedText, onCopy, onDismiss }: { check: ClaimCheck; copiedText: string | null; onCopy: (text: string) => void; onDismiss: () => void }) {
   const isFalse = check.status === 'CONTRADICTED'
+  const isRedAlert = isFalse || check.status === 'MISLEADING'
   const statusLabel = isFalse ? 'False' : check.status === 'MISLEADING' ? 'Misleading' : 'Uncertain'
   const firstQuestion = check.suggestedQuestions[0]?.text
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-3 backdrop-blur-[1px] sm:p-6" onMouseDown={(event) => { if (event.currentTarget === event.target) onDismiss() }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="fact-alert-title" className="max-h-[92vh] w-full max-w-[560px] overflow-y-auto rounded-2xl bg-white shadow-[0_24px_80px_rgba(0,0,0,0.28)]" onMouseDown={(event) => event.stopPropagation()}>
+      <section role="dialog" aria-modal="true" aria-labelledby="fact-alert-title" className="max-h-[92vh] w-full max-w-[640px] overflow-y-auto rounded-2xl bg-white shadow-[0_24px_80px_rgba(0,0,0,0.28)]" onMouseDown={(event) => event.stopPropagation()}>
         <div className="flex items-center gap-3 px-5 pt-5 sm:px-6">
-          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-extrabold text-white ${isFalse ? 'bg-red-600' : 'bg-amber-600'}`}><X size={12} />{statusLabel}</span>
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-extrabold text-white ${isRedAlert ? 'bg-red-600' : 'bg-amber-600'}`}><X size={12} />{statusLabel}</span>
           <span className="text-[10px] font-medium text-slate-500">{demoInterview.intervieweeName} · {formatTimestamp(check.timestampMs)}</span>
           <button onClick={onDismiss} aria-label="Close fact alert" className="ml-auto rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50"><X size={15} /></button>
         </div>
 
         <div className="px-5 pb-4 pt-4 sm:px-6">
-          <p id="fact-alert-title" className="text-[9px] font-extrabold uppercase tracking-[0.1em] text-slate-400">What was said</p>
-          <p className={`mt-1.5 text-lg font-bold leading-[1.4] text-slate-900 ${isFalse || check.status === 'MISLEADING' ? 'decoration-wavy decoration-red-500 underline decoration-2 underline-offset-4' : ''}`}>“{check.originalQuote}”</p>
+          <p id="fact-alert-title" className="text-[10px] font-extrabold uppercase tracking-[0.1em] text-slate-500">What was said</p>
+          <p className={`mt-1.5 text-xl font-bold leading-[1.4] text-slate-900 ${isFalse || check.status === 'MISLEADING' ? 'decoration-wavy decoration-red-500 underline decoration-2 underline-offset-4' : check.status === 'UNVERIFIED' ? 'decoration-wavy decoration-orange-500 underline decoration-2 underline-offset-4' : ''}`}>“{check.originalQuote}”</p>
         </div>
 
         <div className="mx-5 grid grid-cols-[100px_minmax(0,1fr)] gap-3 rounded-xl bg-slate-100 p-4 sm:mx-6 sm:grid-cols-[130px_minmax(0,1fr)]">
           <div className="flex flex-col justify-center border-r border-slate-200 pr-3">
-            <span className={`text-[10px] font-bold uppercase ${isFalse ? 'text-red-700' : 'text-amber-800'}`}>The facts</span>
+          <span className={`text-[10px] font-bold uppercase ${isRedAlert ? 'text-red-700' : 'text-orange-800'}`}>The facts</span>
             <span className="mt-1 text-[10px] text-slate-500">{check.confidence === undefined ? 'Checking' : `${Math.round(check.confidence * 100)}% confidence`}</span>
           </div>
-          <p className="text-[12px] leading-[1.65] text-slate-700">{check.explanation}</p>
+          <p className="text-sm leading-[1.65] text-slate-800">{check.explanation}</p>
         </div>
 
         <div className="px-5 pt-4 sm:px-6">
-          <h3 className="mb-2 text-[9px] font-extrabold uppercase tracking-[0.1em] text-slate-500">Ask to follow up</h3>
+          <h3 className="mb-2 text-[10px] font-extrabold uppercase tracking-[0.1em] text-slate-500">Ask to follow up</h3>
           <div className="space-y-1.5">
-            {check.suggestedQuestions.slice(0, 2).map((question, index) => <div key={question.text} className="flex items-start gap-2 rounded-xl border border-slate-200 p-3">
-              <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-slate-100 text-[9px] font-bold text-slate-700">{index + 1}</span>
-              <p className="flex-1 text-[11px] font-medium leading-[1.5] text-slate-800">{question.text}</p>
-              <button onClick={() => onCopy(question.text)} aria-label={`Copy question ${index + 1}`} className="rounded-lg border border-slate-200 p-1.5 text-slate-500 hover:bg-slate-50">{copiedText === question.text ? <Check size={12} /> : <Copy size={12} />}</button>
+            {check.suggestedQuestions.slice(0, 2).map((question, index) => <div key={question.text} className={`flex items-start gap-3 rounded-xl p-3.5 ${index === 0 ? 'border-2 border-slate-800' : 'border border-slate-200'}`}>
+              <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full text-[11px] font-bold ${index === 0 ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'}`}>{index + 1}</span>
+              <p className={`flex-1 text-sm leading-[1.55] text-slate-900 ${index === 0 ? 'font-semibold' : 'font-medium'}`}>{question.text}</p>
+              <button onClick={() => onCopy(question.text)} aria-label={`Copy question ${index + 1}`} className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:bg-slate-50">{copiedText === question.text ? <Check size={15} /> : <Copy size={15} />}</button>
             </div>)}
           </div>
-          {check.suggestedStatement && <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-[10px] leading-[1.55] text-slate-600"><b className="text-slate-700">Possible wording: </b>{check.suggestedStatement}</p>}
+          {check.suggestedStatement && <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2.5 text-xs leading-[1.6] text-slate-600"><b className="text-slate-700">Possible wording: </b>{check.suggestedStatement}</p>}
         </div>
 
         <div className="px-5 pb-4 pt-4 sm:px-6">
-          <h3 className="mb-1.5 text-[9px] font-extrabold uppercase tracking-[0.1em] text-slate-500">Sources</h3>
+          <h3 className="mb-1.5 text-[9px] font-extrabold uppercase tracking-[0.1em] text-slate-400">Sources</h3>
           <div className="space-y-1.5">
-            {check.evidence.length ? check.evidence.map((source) => <a key={source.title} href={source.url} target="_blank" rel="noreferrer" className="grid grid-cols-[74px_minmax(0,1fr)] gap-2 text-[10px] leading-[1.5] hover:text-cyan-800">
-              <span className="font-bold text-slate-600">{source.stance === 'supporting' ? 'Supporting' : 'Contrary'}</span><span className="underline decoration-slate-300 underline-offset-2">{source.title}<span className="block text-slate-400 no-underline">{source.summary}</span></span>
+            {check.evidence.length ? check.evidence.map((source) => <a key={source.title} href={source.url} target="_blank" rel="noreferrer" className="grid grid-cols-[68px_minmax(0,1fr)] gap-2 text-[9px] leading-[1.45] hover:text-cyan-800">
+              <span className="font-bold text-slate-500">{source.stance === 'supporting' ? 'Supporting' : 'Contrary'}</span><span className="underline decoration-slate-300 underline-offset-2">{source.title}<span className="block text-slate-400 no-underline">{source.summary}</span></span>
             </a>) : <p className="text-[10px] text-slate-500">No reliable sources found yet.</p>}
           </div>
         </div>
