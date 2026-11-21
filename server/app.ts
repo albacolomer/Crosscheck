@@ -3,11 +3,11 @@ import express from 'express'
 import type { ErrorRequestHandler } from 'express'
 import { apiRoutes } from './routes/api.ts'
 import { ApiError } from './routes/validation.ts'
-import { InterviewStore } from './services/interviewStore.ts'
+import { DEFAULT_JOB_TIMEOUT_MS, InterviewStore } from './services/interviewStore.ts'
 import { unavailablePipeline } from './services/pipelineAdapter.ts'
 import type { AiPipeline } from './types/pipeline.ts'
 
-export function createApp(pipeline: AiPipeline = unavailablePipeline, timeoutMs = 30000) {
+export function createApp(pipeline: AiPipeline = unavailablePipeline, timeoutMs = DEFAULT_JOB_TIMEOUT_MS) {
   const app = express()
   const store = new InterviewStore(pipeline, timeoutMs)
   app.disable('x-powered-by')
