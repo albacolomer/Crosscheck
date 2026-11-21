@@ -12,6 +12,7 @@ interface Turn {
   timestampMs: number
   length: number
   silence: number
+  audio: Buffer[]
 }
 
 function hasSpeech(frame: Buffer) {
@@ -23,7 +24,8 @@ function hasSpeech(frame: Buffer) {
   return energy / (frame.length / 2) >= speechThreshold ** 2
 }
 
-export function createAudioTurns(append: (frame: Buffer) => void, commit: (timestampMs: number) => void) {
+/** `commit` receives the turn's start time and the exact audio sent for it, for post-hoc speaker labeling. */
+export function createAudioTurns(append: (frame: Buffer) => void, commit: (timestampMs: number, audio: Buffer) => void) {
   let preRoll = emptyAudio
   let capturedBytes = 0
   let turn: Turn | undefined
@@ -31,10 +33,14 @@ export function createAudioTurns(append: (frame: Buffer) => void, commit: (times
   function flush() {
     if (!turn) return
 
-    const { length, timestampMs } = turn
+    const { length, timestampMs, audio } = turn
     turn = undefined
-    if (length < minCommitBytes) append(Buffer.alloc(minCommitBytes - length))
-    commit(timestampMs)
+    if (length < minCommitBytes) {
+      const padding = Buffer.alloc(minCommitBytes - length)
+      append(padding)
+      audio.push(padding)
+    }
+    commit(timestampMs, Buffer.concat(audio))
   }
 
   function push(frame: Buffer) {
@@ -52,12 +58,14 @@ export function createAudioTurns(append: (frame: Buffer) => void, commit: (times
         timestampMs: Math.round((frameStart - preRoll.length) / bytesPerMs),
         length: preRoll.length,
         silence: 0,
+        audio: preRoll.length ? [preRoll] : [],
       }
       if (preRoll.length) append(preRoll)
       preRoll = emptyAudio
     }
 
     append(frame)
+    turn.audio.push(frame)
     turn.length += frame.length
     turn.silence = speech ? 0 : turn.silence + frame.length
     if (turn.silence >= pauseBytes || turn.length >= maxTurnBytes) flush()
