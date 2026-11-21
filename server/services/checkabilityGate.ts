@@ -2,8 +2,8 @@
  * Checkability gate — one OpenAI Decisions API call per final segment.
  *
  * Classifies the current segment before claim extraction so that only statements public
- * sources could confirm or refute reach the extractor. Greetings, self-introductions and other
- * personal details, opinions, questions, filler and remarks about the app are skipped. A question
+ * sources could confirm or refute reach the extractor. Greetings, bare self-introductions and other
+ * private personal details (but not first-person facts about a public office), opinions, questions, filler and remarks about the app are skipped. A question
  * is never checkable; a short answer ("Sí", "Pedro Sánchez") is judged together with the preceding
  * question from the recent segments, which are part of the Decisions input.
  * The Decisions API returns a typed choice with probabilities (about 0.3–0.6 s, input tokens
@@ -39,7 +39,7 @@ const SEGMENT_KIND_QUESTION: OpenAI.DecisionCreateParams.QuestionParamChoice = {
   type: 'choice',
   name: 'segment_kind',
   instructions:
-    'Classify the current segment of a live journalist interview transcript. The journalist asks questions; facts asserted by the interviewee are what get checked. If the current segment asserts any objective fact about the world, choose factual_claim even when it also contains other content. Whether an assertion is true or false is irrelevant. ANSWERS: when the current segment answers a question in the recent segments, judge the question and the answer together. A short answer such as "Sí", "No", "Yes, of course", a name ("Pedro Sánchez") or a figure ("Unos 3 millones") to a factual question (who governed in 2019? did X happen? how many?) is factual_claim, because together they assert a checkable fact. QUESTIONS: a segment that only asks is question, including a statement followed by a confirmation tag ("Por Navarra, ¿no?", "That was in 2019, right?") from the interviewer or an unknown speaker; a question is never factual_claim even if it presupposes a fact. Speaker labels may say who is the interviewer and who is the interviewee; an interviewee statement ending in a tag such as "¿no?" or "¿verdad?" still asserts its fact. The transcript may be in any language.',
+    'Classify the current segment of a live journalist interview transcript. The journalist asks questions; facts asserted by the interviewee are what get checked. If the current segment asserts any objective fact about the world, choose factual_claim even when it also contains other content. Whether an assertion is true or false is irrelevant. ANSWERS: when the current segment answers a question in the recent segments, judge the question and the answer together. A short answer such as "Sí", "No", "Yes, of course", a name ("Pedro Sánchez") or a figure ("Unos 3 millones") to a factual question (who governed in 2019? did X happen? how many?) is factual_claim, because together they assert a checkable fact. QUESTIONS: a segment that only asks is question, including a statement followed by a confirmation tag ("Por Navarra, ¿no?", "That was in 2019, right?") from the interviewer or an unknown speaker; a question is never factual_claim even if it presupposes a fact. Speaker labels may say who is the interviewer and who is the interviewee; an interviewee statement ending in a tag such as "¿no?" or "¿verdad?" still asserts its fact. PUBLIC ROLES: when the speaker has identified themselves (here or in the recent segments) as holding a public office or a role at a named organization, first-person statements about that office, mandate, government, country or organization ("My mandate started in 2018", "We have 22 ministries", "Nuestro paro está por debajo del 5%") are factual_claim, not personal. The transcript may be in any language.',
   choices: [
     {
       value: 'factual_claim',
@@ -48,7 +48,7 @@ const SEGMENT_KIND_QUESTION: OpenAI.DecisionCreateParams.QuestionParamChoice = {
     },
     {
       value: 'personal',
-      description: 'Greeting, self-introduction, or personal detail about the speaker or people present (name, age, feelings, own situation or plans).',
+      description: 'Greeting, bare self-introduction, or private personal detail about the speaker or people present (name, age, feelings, own situation or plans). Not facts about a public office, government, country or organization.',
     },
     { value: 'opinion', description: 'Opinion, value judgement, prediction, promise or hypothetical.' },
     {
