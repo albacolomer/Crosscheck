@@ -2,7 +2,28 @@
 
 Read this document before implementing AI analysis or backend integration. The file ownership and non-overlap rules are mandatory for this work, as requested by Person 4. They let both contributors progress independently without creating duplicate implementations.
 
-**Status:** ownership rules are the working baseline; proposed integration interfaces are still awaiting Person 5's confirmation. This document does not mean the pipeline exists or that Person 5 has already accepted new contracts. Base reviewed: `a5a6fb0`.
+**Status:** contract revision `p4-0.1` is accepted and integrated on branch `feat/crosscheck-integration` (see §0). Sections 1–5 are kept as the original coordination record; where they describe a proposal, §0 supersedes them.
+
+## 0. Accepted contract — revision p4-0.1
+
+Types live in `server/services/pipeline/contracts.ts`; the backend boundary is `AiPipeline` in `server/types/pipeline.ts`.
+
+```ts
+interface AiPipeline {
+  extractClaims(input: { context: InterviewContext; segment: TranscriptSegment; recentSegments?: TranscriptSegment[] }, signal?: AbortSignal): Promise<ExtractedClaim[]>
+  checkClaim(input: { context: InterviewContext; claim: ExtractedClaim }, signal?: AbortSignal): Promise<ClaimCheck>
+}
+type ExtractedClaim = Pick<ClaimCheck, 'id' | 'originalQuote' | 'normalizedClaim' | 'timestampMs'>
+```
+
+- **Loading:** the backend imports `./server/services/factCheckPipeline.ts` (default export) unless `AI_PIPELINE_MODULE` names another module; `AI_PIPELINE_MODULE=none` runs without analysis. The module is imported after `dotenv/config`. Model: `OPENAI_ANALYSIS_MODEL`, default `gpt-5.4-mini`. Missing keys never stop startup.
+- **`recentSegments`:** the store sends up to 6 preceding final segments of the same interview, oldest first, excluding `segment`. Used only to resolve references and statements split across segments. Non-final segments yield `[]` with no provider call.
+- **Claims:** IDs are `${segment.id}:c${index}`; `timestampMs` is copied from the source segment; `originalQuote` is exact transcript wording.
+- **Verdicts:** `checkClaim` resolves a terminal verdict, never `CHECKING`. Every evidence URL comes from a retrieved Tavily source; non-`UNVERIFIED` verdicts carry at least one evidence item. `confidence` is 0–1.
+- **UNVERIFIED vs failure:** `UNVERIFIED` means the search succeeded but reliable evidence was insufficient (an empty search is not a failure). Operational problems reject with `PipelineError` and never become a verdict.
+- **Error codes:** `CONFIGURATION` (missing/rejected key or model), `PROVIDER` (upstream outage or non-success), `TIMEOUT`, `ABORTED`, `INVALID_OUTPUT` (model/provider output failed validation). Messages are sanitized; the store shows them as `job.error = "<CODE>: <message>"`, marks the job `failed`, and gives the check a placeholder `UNVERIFIED` with confidence 0. Failed jobs can be retried through the retry route.
+- **Timeouts:** Tavily 12 s, each OpenAI call 20 s. Extraction is one job (one call); a fact check is one job (search + one analysis call, ≤ 32 s). The store's per-job timeout is 45 s, counted from when the job starts running.
+- **Summary:** `GET /api/interviews/:id/summary` returns `summarizeInterview` over checks whose job did not fail. `InterviewSummary` in `shared/api.ts` now also has `pendingClaims`, `contradictions`, `needsResearch`, and `followUpQuestions`. `unansweredQuestions` stays empty because no answer state is tracked.
 
 ## Quick path for Person 5 and their coding agent
 

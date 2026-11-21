@@ -110,7 +110,25 @@ Agree on shared types and integration events before building the modules. Reuse 
 
 ## Person 4 — Parallel Delivery Plan
 
-**Status: planned work, not implemented functionality.** Person 4 remains accountable for analysis, but can delegate the packages below to teammates who have finished their original areas. Assign one human owner to each package before starting. A contributor's original team number does not change the edit boundaries of their assigned package.
+**Status: P4-0 through P4-F are implemented on branch `feat/crosscheck-integration` (contract revision `p4-0.1`), not yet merged to `main`.** See the status table below. The package descriptions that follow are kept as the specification each package was built against.
+
+### Implementation status (`feat/crosscheck-integration`)
+
+| ID | Status | Delivered in |
+| --- | --- | --- |
+| P4-0 | Implemented | `server/services/pipeline/contracts.ts` (`CONTRACT_REVISION = 'p4-0.1'`) |
+| P4-A | Implemented | `claimExtractor.ts`, `pipeline/context.ts` |
+| P4-B | Implemented | `webSearch.ts` (Tavily, 12 s cap) |
+| P4-C | Implemented | `evidenceAnalyzer.ts` |
+| P4-D | Implemented | `summaryGenerator.ts`, used by `GET /api/interviews/:id/summary` |
+| P4-E | Implemented | `pipeline/openaiProvider.ts` (20 s cap per call), `factCheckPipeline.ts` |
+| P4-F | Implemented | default export of `factCheckPipeline.ts`, loaded by default; store passes up to 6 preceding final segments; job timeout 45 s |
+
+**Verified:** `npm run lint`, `npm run build`, and `npx tsc -p tsconfig.node.json --noEmit` pass. Backend smoke run with real OpenAI and Tavily keys: two final segments posted over REST were extracted, searched and judged (the Eiffel Tower height/date claim came back `SUPPORTED` with Britannica, Wikipedia and the official site as evidence); the summary endpoint reconciled the counts. With an empty `TAVILY_API_KEY` the server still boots and the check job fails with `CONFIGURATION: Tavily API key is not configured.`, excluded from the summary.
+
+**Not verified:** the browser journey (microphone, live transcription into the dashboard, insights page rendering), misleading/contradicted live scenarios, recording-restart chronology, and extraction quality across longer conversations. The extractor can still emit weak claims (for example, the speaker's own location).
+
+Person 4 remains accountable for analysis, but can delegate the packages below to teammates who have finished their original areas. Assign one human owner to each package before starting. A contributor's original team number does not change the edit boundaries of their assigned package.
 
 This section organizes tasks; [PIPELINE_BACKEND_HANDOFF.md](./PIPELINE_BACKEND_HANDOFF.md) remains the **only cross-role technical contract**. Put definitive signatures, payloads, error semantics, and contract revisions there, not in a second integration document. Existing `shared/types.ts` takes precedence over the illustrative minimum contracts above.
 
