@@ -6,8 +6,8 @@
 }
 
 @keyframes verdict-toast-enter {
-  from { opacity: 0; transform: translateX(16px) scale(0.98); }
-  to { opacity: 1; transform: translateX(0) scale(1); }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .verdict-flash {
@@ -21,18 +21,8 @@
   100% { background-color: transparent; box-shadow: 0 0 0 6px transparent; }
 }
 
-.verdict-flash .live-badge-enter > * {
-  animation: verdict-badge-pulse 0.6s ease-in-out 3;
-}
-
-@keyframes verdict-badge-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.18); }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .verdict-toast-enter,
-  .verdict-flash .live-badge-enter > * {
+  .verdict-toast-enter {
     animation: none;
   }
 

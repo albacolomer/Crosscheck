@@ -51,7 +51,6 @@ export function DictationPanel({ phase, transcript, error, filledSummary, onStar
           aria-label={listening ? 'Stop dictation' : 'Dictate interview context'}
           className={`relative grid h-11 w-11 shrink-0 place-items-center rounded-full text-white shadow-sm transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2 disabled:cursor-wait disabled:opacity-70 ${listening ? 'bg-rose-600 hover:bg-rose-700' : 'bg-emerald-700 hover:bg-emerald-800'}`}
         >
-          {phase === 'recording' && <span className="absolute inset-0 animate-ping rounded-full bg-rose-400/40" aria-hidden="true" />}
           <span key={icon} className="prep-pop">
             {icon === 'loading'
               ? <LoaderCircle size={18} className="animate-spin" />
