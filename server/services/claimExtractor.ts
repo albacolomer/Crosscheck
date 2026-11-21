@@ -68,10 +68,20 @@ Extract a claim only when the CURRENT segment states or completes a factual asse
 Do not extract:
 - opinions, values, feelings, rhetoric, slogans or hype ("we are the best", "this is a disaster"), even when they mention a public topic;
 - predictions, promises, plans, intentions or hypotheticals;
-- questions, greetings, filler and small talk;
+- questions, including statements with a confirmation tag ("Por Navarra, ¿no?", "That was 2019, right?") asked by the interviewer, and anything the interviewer says (speaker label "(interviewer)"): a question is never a claim, even when it presupposes a fact;
+- greetings, filler and small talk;
 - self-introductions and personal details about the speaker or the people present: their name, age, job, home, family, feelings, plans or own situation ("Me llamo Juan Carlos", "I live in Madrid");
 - remarks about the recording, the app, the microphone or the conversation itself ("A ver cuánto tarda", "let's see if this works");
-- claims made entirely in recent_segments (they were already processed). Use recent_segments only to understand the current segment.
+- claims made entirely in recent_segments (they were already processed). Use recent_segments only to understand the current segment. Questions in recent_segments were never checked.
+
+Answers to questions:
+- When the current segment answers the most recent question in recent_segments, check the answer in the context of that question: normalizedClaim is the fact that question and answer assert together, in the question's language and with the question's subject, period and scope.
+  - "¿Quién gobernaba en España en 2019?" + "Pedro Sánchez." -> "En 2019 gobernaba en España Pedro Sánchez."
+  - "¿En 2019 gobernaba Rajoy?" + "Sí, claro." -> "En 2019 gobernaba Rajoy."; + "No." -> "En 2019 no gobernaba Rajoy."
+  - "How many people live in Madrid?" + "About 3 million." -> "About 3 million people live in Madrid."
+- originalQuote is the verbatim answer from the current segment ("Pedro Sánchez.", "Sí, claro."), never the question. The question's wording goes only into normalizedClaim.
+- An interviewee statement ending in a tag such as "¿no?" or "¿verdad?" still asserts its fact; drop the tag from normalizedClaim.
+- Emit nothing when the answer is evasive, unsure ("no lo sé", "I don't remember"), an opinion, or answers a question that is not about a checkable fact.
 
 Completeness:
 - If a statement is incomplete — it ends mid-sentence, is cut off, or lacks the information needed to check it (for example "our emissions fell by") — emit nothing for it.
@@ -79,6 +89,7 @@ Completeness:
 
 References and faithfulness:
 - Resolve pronouns and vague references ("we", "it", "that year", "the company") only when recent_segments or the interview context explicitly identify them; for example, the interviewee's organization from the context, or the subject of an explicit preceding question.
+- Speaker labels may carry a role, e.g. "Speaker 1 (interviewer)" and "Speaker 2 (interviewee)"; "unknown speaker" means the role is not known yet.
 - Never invent or assume a subject, date, place, unit, denominator or comparison base. Keep qualifiers such as "per unit produced", "about", "since 2019" or "in Europe" exactly; never turn a relative or per-unit figure into an absolute one.
 - If a reference cannot be resolved explicitly, keep the speaker's wording in normalizedClaim, or emit nothing if the claim would not be checkable.
 

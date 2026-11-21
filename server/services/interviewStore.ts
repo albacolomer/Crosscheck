@@ -11,9 +11,22 @@ interface Session {
   state: InterviewSnapshot
   listeners: Set<(snapshot: InterviewSnapshot) => void>
   claims: Map<string, { job: ProcessingJob; factCheck: ClaimCheck }>
+  /** Final segments whose extraction waits briefly for a diarization speaker label. */
+  awaitingSpeaker: Map<string, () => void>
+}
+
+export interface IngestOptions {
+  /**
+   * Diarization will label this segment shortly: delay its extraction (never its publication) until
+   * the label arrives or SPEAKER_WAIT_MS passes, so interviewer questions can be skipped by speaker.
+   */
+  awaitSpeaker?: boolean
 }
 
 export const DEFAULT_JOB_TIMEOUT_MS = 45000
+
+/** Upper bound on how long extraction waits for a diarization speaker label (labels usually take 1–3 s). */
+export const SPEAKER_WAIT_MS = 3500
 
 /** Preceding final segments sent to extraction as conversational context. */
 const RECENT_SEGMENTS = 6
@@ -40,7 +53,7 @@ export class InterviewStore {
     const interview = { ...structuredClone(context), id: randomUUID(), createdAt: Date.now() }
     this.sessions.set(interview.id, {
       state: { interview, transcript: [], factChecks: [], jobs: [] },
-      listeners: new Set(), claims: new Map(),
+      listeners: new Set(), claims: new Map(), awaitingSpeaker: new Map(),
     })
     return structuredClone(interview)
   }
@@ -67,7 +80,7 @@ export class InterviewStore {
     if (session.state.interview.endedAt !== undefined) throw new ApiError(409, 'INTERVIEW_ENDED', 'Interview has ended.')
   }
 
-  ingest(id: string, segment: TranscriptSegment) {
+  ingest(id: string, segment: TranscriptSegment, options: IngestOptions = {}) {
     const session = this.session(id)
     this.requireOpen(session)
     const index = session.state.transcript.findIndex(entry => entry.id === segment.id)
@@ -82,7 +95,10 @@ export class InterviewStore {
     if (existing) session.state.transcript[index] = structuredClone(segment)
     else session.state.transcript.push(structuredClone(segment))
     session.state.transcript.sort((a, b) => a.timestampMs - b.timestampMs)
-    if (segment.isFinal) this.queueExtraction(session, segment)
+    if (segment.isFinal) {
+      if (options.awaitSpeaker && !segment.speaker) this.queueExtractionAfterSpeaker(session, segment)
+      else this.queueExtraction(session, segment)
+    }
     this.publish(session)
     return { segment: structuredClone(segment), duplicate: false }
   }
@@ -96,17 +112,35 @@ export class InterviewStore {
     const segment = session.state.transcript.find(entry => entry.id === segmentId)
     if (!segment || segment.speaker === speaker) return
     segment.speaker = speaker
+    session.awaitingSpeaker.get(segmentId)?.()
     this.publish(session)
+  }
+
+  /** Shows the extraction job as queued now and starts it when the speaker label arrives or the wait expires. */
+  private queueExtractionAfterSpeaker(session: Session, segment: TranscriptSegment) {
+    const job: ProcessingJob = { id: randomUUID(), kind: 'extraction', status: 'queued', segmentId: segment.id }
+    session.state.jobs.push(job)
+    const start = () => {
+      clearTimeout(timer)
+      if (session.awaitingSpeaker.get(segment.id) !== start) return
+      session.awaitingSpeaker.delete(segment.id)
+      this.queueExtraction(session, segment, job)
+    }
+    const timer = setTimeout(start, SPEAKER_WAIT_MS)
+    timer.unref?.()
+    session.awaitingSpeaker.set(segment.id, start)
   }
 
   private queueExtraction(session: Session, segment: TranscriptSegment, job?: ProcessingJob) {
     const extraction: ProcessingJob = job ?? { id: randomUUID(), kind: 'extraction', status: 'queued', segmentId: segment.id }
     if (!job) session.state.jobs.push(extraction)
     this.enqueue(session, extraction, async signal => {
+      // Read the stored copy so a speaker label attached after ingestion is included.
+      const current = session.state.transcript.find(entry => entry.id === segment.id) ?? segment
       const claims = await this.pipeline.extractClaims({
         context: this.context(session),
-        segment: structuredClone(segment),
-        recentSegments: this.recentSegments(session, segment),
+        segment: structuredClone(current),
+        recentSegments: this.recentSegments(session, current),
       }, signal)
       if (!Array.isArray(claims) || claims.length > 20 || claims.some(claim => !validClaim(claim))) {
         throw new Error('Invalid claim extraction result.')

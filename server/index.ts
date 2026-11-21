@@ -8,12 +8,14 @@ const port = Number(process.env.PORT ?? 3001)
 if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be an integer between 1 and 65535.')
 const { app, store } = createApp(await loadPipeline())
 const server = createServer(app)
+const diarization = process.env.SPEAKER_DIARIZATION?.trim().toLowerCase() !== 'off'
 attachLiveTranscription(server, {
   allowedOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173',
   apiKey: process.env.OPENAI_API_KEY?.trim(),
-  diarization: process.env.SPEAKER_DIARIZATION?.trim().toLowerCase() !== 'off',
+  diarization,
   onFinalSegment(segment, interviewId) {
-    if (interviewId) store.ingest(interviewId, segment)
+    // With diarization on, extraction waits briefly for the speaker label so interviewer questions are skipped.
+    if (interviewId) store.ingest(interviewId, segment, { awaitSpeaker: diarization })
   },
   onSpeaker(segmentId, speaker, interviewId) {
     if (!interviewId) return

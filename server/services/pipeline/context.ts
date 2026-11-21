@@ -134,3 +134,43 @@ export function buildExtractionPromptInput(
     '</current_segment>',
   ].join('\n')
 }
+
+// ---------------------------------------------------------------------------
+// Questions and speaker roles
+
+/** Speaker label the pipeline treats as the interviewer by default: the first voice heard. */
+export const DEFAULT_INTERVIEWER_SPEAKERS = ['Speaker 1', 'Journalist']
+
+const SENTENCE_BREAK = /(?<=[.!?…])\s+/u
+const ENDS_AS_QUESTION = /[?？][\s"'»”’)\]]*$/u
+
+/**
+ * True when every sentence of the text is interrogative, including declarative sentences with a
+ * confirmation tag ("Por Navarra, ¿no?", "That was 2019, right?"). Used as a fast, language-neutral
+ * check before any provider call; a mixed segment ("Sí. ¿Y en 2020?") is not question-only.
+ */
+export function isQuestionOnly(text: string): boolean {
+  const sentences = normalizeWhitespace(text).split(SENTENCE_BREAK).filter(Boolean)
+  return sentences.length > 0 && sentences.every((sentence) => ENDS_AS_QUESTION.test(sentence))
+}
+
+/** True when the segment carries a speaker label that belongs to the interviewer. */
+export function isInterviewerSegment(segment: TranscriptSegment, interviewerSpeakers: readonly string[]): boolean {
+  const speaker = segment.speaker ? normalizeWhitespace(segment.speaker) : ''
+  return Boolean(speaker) && interviewerSpeakers.includes(speaker)
+}
+
+/**
+ * Returns copies whose speaker label names its role, e.g. `Speaker 1 (interviewer)` and
+ * `Speaker 2 (interviewee)`, so prompts can tell questions from answers. Unlabelled segments are
+ * unchanged. Nothing changes when no interviewer label is configured.
+ */
+export function withSpeakerRoles(segments: TranscriptSegment[], interviewerSpeakers: readonly string[]): TranscriptSegment[] {
+  if (interviewerSpeakers.length === 0) return segments
+  return segments.map((segment) => {
+    const speaker = segment.speaker ? normalizeWhitespace(segment.speaker) : ''
+    if (!speaker) return segment
+    const role = interviewerSpeakers.includes(speaker) ? 'interviewer' : 'interviewee'
+    return { ...segment, speaker: `${speaker} (${role})` }
+  })
+}
