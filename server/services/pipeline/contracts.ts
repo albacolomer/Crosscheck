@@ -9,7 +9,10 @@
  * - Claim IDs: `${segment.id}:c${index}` (index from 0, within one extraction result).
  * - `timestampMs` is recording-relative and always copied from the source segment.
  * - `originalQuote` is the exact transcript wording (joined with a single space when a
- *   claim spans consecutive segments). `normalizedClaim` is the self-contained rewrite.
+ *   claim spans consecutive segments). `normalizedClaim` is the self-contained rewrite, with
+ *   first/second-person references resolved from the conversation ("my mandate" -> "Pedro
+ *   Sánchez's mandate as President of Spain"); `subject` names that resolved entity.
+ * - Verification (P4-B, P4-C) receives the conversation excerpt the claim was made in.
  * - Confidence is a number from 0 to 1.
  * - Every evidence URL in a ClaimCheck must be the URL of a supplied SearchSource.
  * - `UNVERIFIED` means insufficient reliable evidence. Operational failures throw a
@@ -18,11 +21,11 @@
  */
 import type { InterviewSummary } from '../../../shared/api.ts'
 import type { ClaimCheck, InterviewContext, TranscriptSegment } from '../../../shared/types.ts'
-import type { AiPipeline, ExtractedClaim } from '../../types/pipeline.ts'
+import type { AiPipeline, ClaimConversation, ExtractedClaim } from '../../types/pipeline.ts'
 
-export const CONTRACT_REVISION = 'p4-0.1'
+export const CONTRACT_REVISION = 'p4-0.2'
 
-export type { AiPipeline, ClaimCheck, ExtractedClaim, InterviewContext, TranscriptSegment }
+export type { AiPipeline, ClaimCheck, ClaimConversation, ExtractedClaim, InterviewContext, TranscriptSegment }
 
 // ---------------------------------------------------------------------------
 // Failures
@@ -111,6 +114,8 @@ export interface SearchSource {
 export interface SearchInput {
   context: InterviewContext
   claim: ExtractedClaim
+  /** Optional conversation excerpt; its `subject` (or `claim.subject`) is added to queries. */
+  conversation?: ClaimConversation
 }
 
 /** Resolves `[]` for a successful empty search; throws PipelineError for failures. */
@@ -123,6 +128,10 @@ export interface AnalysisInput {
   context: InterviewContext
   claim: ExtractedClaim
   sources: SearchSource[]
+  /** Optional conversation excerpt, shown to the model as data so the claim is judged as meant. */
+  conversation?: ClaimConversation
+  /** Today's date (YYYY-MM-DD) for judging past events dated in the future; defaults to the current UTC date. */
+  today?: string
 }
 
 /**

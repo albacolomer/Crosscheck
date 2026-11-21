@@ -27,6 +27,8 @@ export function useLiveInterview(prepared: PreparedContext | null) {
   const [stream, setStream] = useState<Stream>()
   const [actionError, setActionError] = useState<string | null>(null)
   const [ending, setEnding] = useState(false)
+  // The attempt a restart requested; the restart lasts until that attempt's interview exists or fails.
+  const [restartAttempt, setRestartAttempt] = useState<number>()
 
   useEffect(() => {
     if (!prepared) return
@@ -99,7 +101,7 @@ export function useLiveInterview(prepared: PreparedContext | null) {
     : currentStream?.status ?? 'connecting'
 
   const endedAt = snapshot?.interview.endedAt
-  const { start: startRecording, stop: stopRecording } = recording
+  const { start: startRecording, stop: stopRecording, reset: resetRecording } = recording
 
   const start = useCallback(() => {
     if (!interviewId || endedAt !== undefined) return
@@ -125,6 +127,21 @@ export function useLiveInterview(prepared: PreparedContext | null) {
 
   const retry = useCallback(() => setAttempt((value) => value + 1), [])
 
+  /**
+   * Discards the current session and creates a new backend interview from the same prepared context.
+   * The old interview is ended best-effort so its queued jobs stop mattering; failures are ignored.
+   */
+  const restart = useCallback(() => {
+    if (!prepared || ending || (restartAttempt === attempt && !interviewId)) return false
+    resetRecording()
+    if (interviewId && endedAt === undefined) void endInterview(interviewId).catch(() => undefined)
+    setActionError(null)
+    setSessionOrder([])
+    setAttempt(attempt + 1)
+    setRestartAttempt(attempt + 1)
+    return true
+  }, [prepared, ending, resetRecording, interviewId, endedAt, attempt, restartAttempt])
+
   return {
     interview: snapshot?.interview ?? interview,
     interviewId,
@@ -135,12 +152,16 @@ export function useLiveInterview(prepared: PreparedContext | null) {
     jobs: snapshot?.jobs ?? [],
     endedAt,
     ending,
+    restarting: restartAttempt === attempt && !interviewId && !creationError,
     recordingStatus: recording.status,
     recordingError: recording.error,
     start,
     stop: stopRecording,
     end,
     retry,
+    restart,
+    /** Changes whenever a new backend interview is requested; use it to reset per-session UI state. */
+    session: attempt,
   }
 }
 

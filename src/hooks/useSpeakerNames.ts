@@ -26,7 +26,9 @@ export function useSpeakerNames(participants: Participant[], transcript: Transcr
     setOverrides((current) => ({ ...current, [first.label]: second.name, [second.label]: first.name }))
   }, [speakers])
 
-  return { speakers, candidates, namedTranscript, rename, swap }
+  const reset = useCallback(() => setOverrides({}), [])
+
+  return { speakers, candidates, namedTranscript, rename, swap, reset }
 }
 
 export type SpeakerNames = ReturnType<typeof useSpeakerNames>

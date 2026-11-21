@@ -110,13 +110,13 @@ Agree on shared types and integration events before building the modules. Reuse 
 
 ## Person 4 — Parallel Delivery Plan
 
-**Status: P4-0 through P4-F are implemented on branch `feat/crosscheck-integration` (contract revision `p4-0.1`), not yet merged to `main`.** See the status table below. The package descriptions that follow are kept as the specification each package was built against.
+**Status: P4-0 through P4-F are implemented on branch `feat/crosscheck-integration` (contract revision `p4-0.1`, now `p4-0.2`), not yet merged to `main`.** See the status table below. The package descriptions that follow are kept as the specification each package was built against.
 
 ### Implementation status (`feat/crosscheck-integration`)
 
 | ID | Status | Delivered in |
 | --- | --- | --- |
-| P4-0 | Implemented | `server/services/pipeline/contracts.ts` (`CONTRACT_REVISION = 'p4-0.1'`) |
+| P4-0 | Implemented | `server/services/pipeline/contracts.ts` (`CONTRACT_REVISION = 'p4-0.2'`) |
 | P4-A | Implemented | `claimExtractor.ts`, `pipeline/context.ts` |
 | P4-B | Implemented | `webSearch.ts` (Tavily, 12 s cap) |
 | P4-C | Implemented | `evidenceAnalyzer.ts` |
@@ -124,6 +124,7 @@ Agree on shared types and integration events before building the modules. Reuse 
 | P4-E | Implemented | `pipeline/openaiProvider.ts` (20 s cap per call), `factCheckPipeline.ts` |
 | P4-F | Implemented | default export of `factCheckPipeline.ts`, loaded by default; store passes up to 6 preceding final segments; job timeout 45 s |
 | Gate | Implemented | `checkabilityGate.ts`: one OpenAI Decisions API call per final segment decides whether it is checkable before extraction (see the handoff §0) |
+| Context | Implemented | Conversation context (contract `p4-0.2`): extraction resolves "I/my/we/our/your" from the conversation into a self-contained claim plus `subject`; `checkClaim` receives the claim's conversation excerpt and subject for Tavily queries and the evidence analyzer (with today's date). No extra model call (see the handoff §0) |
 | Q&A | Implemented | Questions are not checked; answers are checked with the preceding question as context (interviewer speaker label or question-only text skips extraction; store waits up to 3.5 s for a diarization label; see the handoff §0) |
 
 **Verified:** `npm run lint`, `npm run build`, and `npx tsc -p tsconfig.node.json --noEmit` pass. Backend smoke run with real OpenAI and Tavily keys: two final segments posted over REST were extracted, searched and judged (the Eiffel Tower height/date claim came back `SUPPORTED` with Britannica, Wikipedia and the official site as evidence); the summary endpoint reconciled the counts. With an empty `TAVILY_API_KEY` the server still boots and the check job fails with `CONFIGURATION: Tavily API key is not configured.`, excluded from the summary.

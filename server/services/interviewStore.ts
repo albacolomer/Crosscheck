@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { InterviewContext, TranscriptSegment, ClaimCheck } from '../../shared/types.ts'
 import type { InterviewSnapshot, ProcessingJob, SummaryResponse } from '../../shared/api.ts'
-import type { AiPipeline, ExtractedClaim } from '../types/pipeline.ts'
+import type { AiPipeline, ClaimConversation, ExtractedClaim } from '../types/pipeline.ts'
 import { ApiError } from '../routes/validation.ts'
 import { PipelineUnavailableError } from './pipelineAdapter.ts'
 import { PipelineError } from './pipeline/contracts.ts'
@@ -11,6 +11,8 @@ interface Session {
   state: InterviewSnapshot
   listeners: Set<(snapshot: InterviewSnapshot) => void>
   claims: Map<string, { job: ProcessingJob; factCheck: ClaimCheck }>
+  /** Conversation each extracted claim was made in, by claim id; reused when its check is retried. */
+  conversations: Map<string, ClaimConversation>
   /** Final segments whose extraction waits briefly for a diarization speaker label. */
   awaitingSpeaker: Map<string, () => void>
 }
@@ -53,7 +55,7 @@ export class InterviewStore {
     const interview = { ...structuredClone(context), id: randomUUID(), createdAt: Date.now() }
     this.sessions.set(interview.id, {
       state: { interview, transcript: [], factChecks: [], jobs: [] },
-      listeners: new Set(), claims: new Map(), awaitingSpeaker: new Map(),
+      listeners: new Set(), claims: new Map(), conversations: new Map(), awaitingSpeaker: new Map(),
     })
     return structuredClone(interview)
   }
@@ -137,16 +139,22 @@ export class InterviewStore {
     this.enqueue(session, extraction, async signal => {
       // Read the stored copy so a speaker label attached after ingestion is included.
       const current = session.state.transcript.find(entry => entry.id === segment.id) ?? segment
+      const recentSegments = this.recentSegments(session, current)
       const claims = await this.pipeline.extractClaims({
         context: this.context(session),
         segment: structuredClone(current),
-        recentSegments: this.recentSegments(session, current),
+        recentSegments,
       }, signal)
       if (!Array.isArray(claims) || claims.length > 20 || claims.some(claim => !validClaim(claim))) {
         throw new Error('Invalid claim extraction result.')
       }
       return () => {
-        for (const claim of claims) this.queueClaim(session, { ...claim, timestampMs: segment.timestampMs })
+        // Verification sees the same conversation extraction saw, ending with the claim's segment.
+        const segments = [...recentSegments, structuredClone(current)]
+        for (const claim of claims) {
+          const subject = typeof claim.subject === 'string' && claim.subject.trim() ? claim.subject.trim().slice(0, 200) : undefined
+          this.queueClaim(session, { ...claim, timestampMs: segment.timestampMs }, subject ? { segments, subject } : { segments })
+        }
       }
     })
   }
@@ -170,14 +178,16 @@ export class InterviewStore {
     }))
   }
 
-  private queueClaim(session: Session, claim: ExtractedClaim) {
+  private queueClaim(session: Session, claim: ExtractedClaim, conversation?: ClaimConversation) {
     const key = normalize(claim.normalizedClaim)
     const previous = session.claims.get(key)
     if (previous) return { ...previous, duplicate: true }
+    const { id, originalQuote, normalizedClaim, timestampMs } = claim
     const factCheck: ClaimCheck = {
-      ...claim, status: 'CHECKING', evidence: [], suggestedQuestions: [],
+      id, originalQuote, normalizedClaim, timestampMs, status: 'CHECKING', evidence: [], suggestedQuestions: [],
     }
     if (session.state.factChecks.some(check => check.id === factCheck.id)) factCheck.id = randomUUID()
+    if (conversation) session.conversations.set(factCheck.id, conversation)
     const job: ProcessingJob = { id: randomUUID(), kind: 'fact-check', status: 'queued', claimId: factCheck.id }
     session.claims.set(key, { job, factCheck })
     session.state.factChecks.push(factCheck)
@@ -190,9 +200,11 @@ export class InterviewStore {
   private queueCheck(session: Session, job: ProcessingJob, factCheck: ClaimCheck) {
     const { id, originalQuote, normalizedClaim, timestampMs } = factCheck
     this.enqueue(session, job, async signal => {
+      const conversation = session.conversations.get(id)
       const result = await this.pipeline.checkClaim({
         context: this.context(session),
-        claim: { id, originalQuote, normalizedClaim, timestampMs },
+        claim: { id, originalQuote, normalizedClaim, timestampMs, ...(conversation?.subject ? { subject: conversation.subject } : {}) },
+        ...(conversation ? { conversation: structuredClone(conversation) } : {}),
       }, signal)
       validateResult(result, id)
       const { status, explanation, confidence, evidence, suggestedQuestions } = structuredClone(result)
