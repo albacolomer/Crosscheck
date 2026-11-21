@@ -66,6 +66,7 @@ function App() {
       intervieweeName={live.interview?.intervieweeName ?? interview.intervieweeName}
       transcript={live.transcript}
       checks={live.factChecks}
+      jobs={live.jobs}
       connectionStatus={live.connectionStatus}
       recordingStatus={live.recordingStatus}
       error={live.recordingError ?? live.error}
