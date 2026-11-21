@@ -222,7 +222,7 @@ export function LiveDashboard({
             const style = speakerStyle(speaker, speakers)
             const isInfoOpen = claim?.id === infoId
             return (
-              <article key={segment.id} className="live-segment-enter relative py-4 sm:py-5 2xl:py-6">
+              <article key={segment.id} className={`live-segment-enter relative py-4 sm:py-5 2xl:py-6 ${isInfoOpen ? 'z-30' : ''}`}>
                 <div className="mb-2 flex items-center text-xs font-semibold uppercase tracking-[0.09em] text-slate-500 sm:text-sm">
                   <span className={`mr-2 h-2 w-2 shrink-0 rounded-full ${style.dot}`} />
                   <span className={style.text}>{speaker?.name ?? 'Speaker'}</span> <span className="px-1 text-slate-300">·</span> {formatTimestamp(segment.timestampMs)}
@@ -305,7 +305,7 @@ function ClaimInfoPopover({ check, copiedText, onCopy, onClose }: { check: Claim
   ]
 
   return (
-    <div className="live-card-enter absolute left-0 top-full z-20 mt-3 w-[min(460px,calc(100vw-3rem))] rounded-xl border border-slate-200 bg-white shadow-[0_16px_45px_rgba(15,23,42,0.16)] 2xl:w-[520px]" onClick={(event) => event.stopPropagation()}>
+    <div className="live-card-enter absolute left-0 top-full z-40 mt-3 w-[min(460px,calc(100vw-3rem))] rounded-xl border border-slate-200 bg-white shadow-[0_16px_45px_rgba(15,23,42,0.16)] 2xl:w-[520px]" onClick={(event) => event.stopPropagation()}>
       <div className="flex items-center gap-2.5 px-5 pt-4">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800"><Check size={15} />Correct</span>
         <span className="text-xs text-slate-500">with context</span>

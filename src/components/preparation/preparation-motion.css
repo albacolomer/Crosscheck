@@ -3,14 +3,14 @@
    items that are already shown never replay them. */
 
 .prep-enter {
-  animation: prep-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: prep-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
   animation-delay: var(--prep-enter-delay, 0ms);
 }
 
 /* Items filled by dictation also get a short highlight ring. */
 .prep-enter.prep-filled {
   animation:
-    prep-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both,
+    prep-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) backwards,
     prep-filled 1100ms ease-out both;
   animation-delay: var(--prep-enter-delay, 0ms), var(--prep-enter-delay, 0ms);
 }
@@ -38,7 +38,7 @@
 
 .prep-pop {
   display: inline-grid;
-  animation: prep-pop 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: prep-pop 200ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 @keyframes prep-pop {

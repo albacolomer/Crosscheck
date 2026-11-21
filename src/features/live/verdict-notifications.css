@@ -2,7 +2,7 @@
    gets when its verdict lands (or when it is revealed from a toast or counter). */
 
 .verdict-toast-enter {
-  animation: verdict-toast-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: verdict-toast-enter 260ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 @keyframes verdict-toast-enter {
