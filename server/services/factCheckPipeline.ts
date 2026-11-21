@@ -16,7 +16,9 @@
  *   answer resolves `[]` without calling extraction. A gate failure is logged and fails open to
  *   extraction, so an outage of the gate never hides claims. Otherwise it resolves the injected
  *   extractor's claims. A successful "no claims" is `[]`; extraction failures reject.
- * - `checkClaim` runs one claim: search, then analysis, with the same signal. It resolves one
+ * - `checkClaim` runs one claim: search, then analysis, with the same signal. The optional
+ *   `conversation` (bounded here, speaker roles added) and the resolved subject reach both, so
+ *   the claim is searched for and judged as meant in the interview; no extra model call is made. It resolves one
  *   terminal ClaimCheck or rejects with a sanitized PipelineError. Each claim is an independent
  *   promise, so one failed claim never discards another claim's completed result.
  * - An empty search is not a failure: analysis receives `[]` and decides (normally UNVERIFIED).
@@ -29,6 +31,7 @@ import {
   type AiPipeline,
   type AnalyzeEvidence,
   type ClaimCheck,
+  type ClaimConversation,
   type ClassifyCheckability,
   type ExtractClaims,
   type ExtractedClaim,
@@ -40,7 +43,14 @@ import {
   type WebSearchOptions,
 } from './pipeline/contracts.ts'
 import { createOpenAIStructuredGenerator } from './pipeline/openaiProvider.ts'
-import { DEFAULT_INTERVIEWER_SPEAKERS, isInterviewerSegment, isQuestionOnly, withSpeakerRoles } from './pipeline/context.ts'
+import {
+  boundConversation,
+  DEFAULT_INTERVIEWER_SPEAKERS,
+  isInterviewerSegment,
+  isQuestionOnly,
+  normalizeWhitespace,
+  withSpeakerRoles,
+} from './pipeline/context.ts'
 import { createCheckabilityGate, DEFAULT_DECISIONS_MODEL } from './checkabilityGate.ts'
 import { createClaimExtractor } from './claimExtractor.ts'
 import { createEvidenceAnalyzer } from './evidenceAnalyzer.ts'
@@ -80,12 +90,16 @@ export function createFactCheckPipeline(deps: PipelineDependencies): AiPipeline 
       return deps.extractClaims(input, signal)
     },
 
-    async checkClaim(input: { context: InterviewContext; claim: ExtractedClaim }, signal?: AbortSignal): Promise<ClaimCheck> {
+    async checkClaim(
+      input: { context: InterviewContext; claim: ExtractedClaim; conversation?: ClaimConversation },
+      signal?: AbortSignal,
+    ): Promise<ClaimCheck> {
       const { context, claim } = input
       throwIfAborted(signal)
-      const sources = await deps.searchEvidence({ context, claim }, signal)
+      const conversation = prepareConversation(input.conversation, claim, interviewerSpeakers)
+      const sources = await deps.searchEvidence({ context, claim, conversation }, signal)
       throwIfAborted(signal)
-      const result = await deps.analyzeEvidence({ context, claim, sources }, signal)
+      const result = await deps.analyzeEvidence({ context, claim, sources, conversation }, signal)
 
       if (!result || result.id !== claim.id) {
         throw new PipelineError('INVALID_OUTPUT', 'Evidence analysis returned a result for a different claim.')
@@ -102,6 +116,21 @@ export function createFactCheckPipeline(deps: PipelineDependencies): AiPipeline 
       }
     },
   }
+}
+
+/**
+ * Bounds the conversation excerpt, labels speaker roles and resolves the subject (explicit
+ * `conversation.subject`, else the extractor's `claim.subject`). Undefined when there is neither.
+ */
+function prepareConversation(
+  conversation: ClaimConversation | undefined,
+  claim: ExtractedClaim,
+  interviewerSpeakers: readonly string[],
+): ClaimConversation | undefined {
+  const subject = normalizeWhitespace(conversation?.subject ?? claim.subject ?? '')
+  const segments = withSpeakerRoles(boundConversation(Array.isArray(conversation?.segments) ? conversation.segments : []), interviewerSpeakers)
+  if (!subject && segments.length === 0) return undefined
+  return subject ? { segments, subject } : { segments }
 }
 
 function throwIfAborted(signal?: AbortSignal) {

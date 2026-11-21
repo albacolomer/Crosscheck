@@ -10,6 +10,8 @@
  * - A missing or blank `apiKey` is reported at call time as PipelineError('CONFIGURATION'),
  *   so the server can still boot without Tavily credentials. The SDK's own
  *   `TAVILY_API_KEY`/keyless fallbacks are never used.
+ * - Queries use the normalized claim, plus the subject resolved from the conversation
+ *   (`conversation.subject` or `claim.subject`) when the claim text does not already name it.
  * - Up to two queries run in parallel with `basic` depth. If at least one succeeds its records
  *   are used; if all fail the most relevant failure is thrown.
  * - Failures: abort → 'ABORTED', `timeoutMs` (default 12000) → 'TIMEOUT', HTTP 401/403 →
@@ -26,6 +28,7 @@ import {
   type SearchSource,
   type WebSearchOptions,
 } from './pipeline/contracts.ts'
+import { isPlaceholderContextValue } from './pipeline/context.ts'
 
 const DEFAULT_MAX_RESULTS = 5
 const DEFAULT_TIMEOUT_MS = 12_000
@@ -92,12 +95,14 @@ export function createWebSearch(options: WebSearchOptions): SearchEvidence {
 // ---------------------------------------------------------------------------
 // Queries
 
-function buildQueries({ claim, context }: SearchInput): string[] {
+function buildQueries({ claim, context, conversation }: SearchInput): string[] {
   const base = collapse(claim.normalizedClaim)
   if (!base) return []
 
-  const queries = [truncateQuery(base)]
-  const subject = subjectHint(context, base)
+  const resolved = collapse(conversation?.subject ?? claim.subject ?? '')
+  // The resolved subject comes first in the main query when the claim text does not already name it.
+  const queries = [truncateQuery(resolved && !mentions(base, resolved) ? `${resolved} ${base}` : base)]
+  const subject = subjectHint(context, base, resolved)
   // Second query looks for independent data on the same claim (keeping its period, scope and
   // units because the claim text is reused verbatim), which can confirm or refute it.
   const second = truncateQuery(`${subject ? `${subject} ` : ''}${base} official data report`)
@@ -105,13 +110,23 @@ function buildQueries({ claim, context }: SearchInput): string[] {
   return queries
 }
 
-/** Adds the interviewee and role only when the normalized claim does not already name them. */
-function subjectHint(context: InterviewContext | undefined, claimText: string): string {
-  const lowerClaim = claimText.toLowerCase()
+/**
+ * Subject words for the second query: the resolved subject when the claim does not name it,
+ * otherwise the interviewee and role from the context (never placeholders such as
+ * "Unknown interviewee") when the claim does not already name them.
+ */
+function subjectHint(context: InterviewContext | undefined, claimText: string, resolved: string): string {
+  if (resolved) return mentions(claimText, resolved) ? '' : resolved
   const parts = [context?.intervieweeName, context?.intervieweeRole]
     .map((part) => (typeof part === 'string' ? collapse(part) : ''))
-    .filter((part) => part && part.length <= 80 && !lowerClaim.includes(part.toLowerCase()))
+    .filter((part) => part && !isPlaceholderContextValue(part) && part.length <= 80 && !mentions(claimText, part))
   return parts.join(' ')
+}
+
+/** True when the main name of `subject` (the part before a comma) already appears in `text`. */
+function mentions(text: string, subject: string): boolean {
+  const name = subject.split(',')[0].trim().toLowerCase()
+  return Boolean(name) && text.toLowerCase().includes(name)
 }
 
 function truncateQuery(query: string): string {
