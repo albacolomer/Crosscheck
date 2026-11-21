@@ -3,7 +3,7 @@ import { AlertCircle, AudioLines, Check, LoaderCircle, Plus, Trash2, X } from 'l
 import type { ParsedPreparation } from '../../shared/preparation'
 import type { InterviewContext } from '../../shared/types'
 import { Collapsible } from '../components/preparation/Collapsible'
-import { DictationPanel } from '../components/preparation/DictationPanel'
+import { DictationButton, DictationPanel } from '../components/preparation/DictationPanel'
 import '../components/preparation/preparation-motion.css'
 import { useContextDictation } from '../hooks/useContextDictation'
 import { useFreshItems } from '../hooks/useFreshItems'
@@ -282,8 +282,13 @@ export function PreparationPage({ onStart }: PreparationPageProps) {
         {microphoneStatus !== 'ready' && microphoneStatus !== 'checking' && microphoneStatus !== 'requesting' && <button type="button" onClick={startInterview} className="mt-3 text-xs text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-slate-800 sm:text-sm">Continue without microphone</button>}
 
         <section className="mt-7 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="context-title">
-          <div className="border-b border-slate-100 px-4 py-3.5 sm:px-5">
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
             <h1 id="context-title" className="text-base font-semibold text-slate-900 sm:text-lg">Interview context <span className="ml-1 font-normal text-slate-500">Optional · helps fact-checking</span></h1>
+            <DictationButton
+              phase={dictation.phase}
+              onStart={() => { setDictationSummary(null); dictation.start() }}
+              onStop={dictation.stop}
+            />
           </div>
 
           <DictationPanel
@@ -291,8 +296,6 @@ export function PreparationPage({ onStart }: PreparationPageProps) {
             transcript={dictation.transcript}
             error={dictation.error}
             filledSummary={dictationSummary}
-            onStart={() => { setDictationSummary(null); dictation.start() }}
-            onStop={dictation.stop}
           />
 
           <div className="grid grid-cols-[62px_minmax(0,1fr)_auto] items-start gap-2 border-b border-slate-100 px-4 py-3.5 sm:grid-cols-[72px_minmax(0,1fr)_auto] sm:gap-3 sm:px-5">
