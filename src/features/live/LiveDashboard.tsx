@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowLeftRight,
   AudioLines,
   Check,
   CircleCheck,
@@ -14,6 +15,7 @@ import {
 } from 'lucide-react'
 import type { ClaimCheck, TranscriptSegment } from '../../../shared/types'
 import type { InterviewConnectionStatus } from '../../hooks/useLiveInterview'
+import type { SpeakerCandidate, SpeakerIdentity } from '../../lib/speakers'
 import { formatTimestamp } from './mock-data'
 
 export type RecordingStatus = 'idle' | 'connecting' | 'recording' | 'stopping' | 'error'
@@ -22,6 +24,10 @@ interface LiveDashboardProps {
   title: string
   intervieweeName: string
   transcript: TranscriptSegment[]
+  speakers: SpeakerIdentity[]
+  speakerCandidates: SpeakerCandidate[]
+  onRenameSpeaker: (label: string, name: string) => void
+  onSwapSpeakers: () => void
   checks: ClaimCheck[]
   connectionStatus: InterviewConnectionStatus
   recordingStatus: RecordingStatus
@@ -31,6 +37,21 @@ interface LiveDashboardProps {
   onStopRecording: () => void
   onRetryConnection: () => void
   onEndInterview: () => void
+}
+
+const intervieweeStyles = [
+  { dot: 'bg-emerald-600', text: 'text-emerald-800', chip: 'border-emerald-200 bg-emerald-50 text-emerald-900', body: 'text-slate-800' },
+  { dot: 'bg-violet-600', text: 'text-violet-800', chip: 'border-violet-200 bg-violet-50 text-violet-900', body: 'text-slate-800' },
+  { dot: 'bg-amber-600', text: 'text-amber-800', chip: 'border-amber-200 bg-amber-50 text-amber-900', body: 'text-slate-800' },
+]
+const interviewerStyle = { dot: 'bg-sky-600', text: 'text-sky-800', chip: 'border-sky-200 bg-sky-50 text-sky-900', body: 'text-slate-500' }
+const unknownStyle = { dot: 'bg-slate-300', text: 'text-slate-500', chip: 'border-slate-200 bg-slate-50 text-slate-700', body: 'text-slate-700' }
+
+function speakerStyle(speaker: SpeakerIdentity | undefined, speakers: SpeakerIdentity[]) {
+  if (!speaker) return unknownStyle
+  if (speaker.role === 'interviewer') return interviewerStyle
+  const position = speakers.filter(({ role }) => role !== 'interviewer').indexOf(speaker)
+  return intervieweeStyles[Math.max(0, position) % intervieweeStyles.length]
 }
 
 function findClaim(checks: ClaimCheck[], segment: TranscriptSegment) {
@@ -43,6 +64,10 @@ export function LiveDashboard({
   title,
   intervieweeName,
   transcript: fullTranscript,
+  speakers,
+  speakerCandidates,
+  onRenameSpeaker,
+  onSwapSpeakers,
   checks,
   connectionStatus,
   recordingStatus,
@@ -59,6 +84,7 @@ export function LiveDashboard({
   const [copiedText, setCopiedText] = useState<string | null>(null)
   const activeAlert = checks.find((check) => check.id === alertId)
   const transcript = showAllTranscript ? fullTranscript : fullTranscript.slice(-5)
+  const speakerByLabel = new Map(speakers.map((speaker) => [speaker.label, speaker]))
   const isRecording = recordingStatus === 'recording' || recordingStatus === 'connecting'
   const isPaused = !isRecording
   const canRecord = connectionStatus === 'connected' && !ending
@@ -139,15 +165,35 @@ export function LiveDashboard({
             )}
           </div>
         )}
+        {speakers.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
+            <span className="text-[9px] font-semibold uppercase tracking-[0.09em] text-slate-400 sm:text-[10px]">Voices</span>
+            {speakers.map((speaker) => {
+              const style = speakerStyle(speaker, speakers)
+              const options = [...new Set([...speakerCandidates.map(({ name }) => name), speaker.name, speaker.label])]
+              return (
+                <label key={speaker.label} title={`Detected as ${speaker.label}`} className={`inline-flex items-center gap-1.5 rounded-full border py-0.5 pl-2 pr-1 ${style.chip}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
+                  <select value={speaker.name} onChange={(event) => onRenameSpeaker(speaker.label, event.target.value)} aria-label={`Name for ${speaker.label}`} className="max-w-[160px] cursor-pointer truncate bg-transparent font-semibold outline-none">
+                    {options.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                </label>
+              )
+            })}
+            {speakers.length === 2 && <button onClick={onSwapSpeakers} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-[10px] font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-800"><ArrowLeftRight size={12} /> Swap</button>}
+          </div>
+        )}
         <div className="space-y-1">
           {transcript.map((segment) => {
             const claim = findClaim(checks, segment)
-            const isInterviewer = segment.speaker === 'Journalist'
+            const speaker = segment.speaker ? speakerByLabel.get(segment.speaker.trim()) : undefined
+            const style = speakerStyle(speaker, speakers)
             const isInfoOpen = claim?.id === infoId
             return (
               <article key={segment.id} className="relative py-3.5 sm:py-4">
-                <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.09em] text-slate-500 sm:text-[10px]">
-                  {isInterviewer ? 'INTERVIEWER' : 'INTERVIEWEE'} <span className="px-1 text-slate-300">·</span> {formatTimestamp(segment.timestampMs)}
+                <div className="mb-1.5 flex items-center text-[9px] font-semibold uppercase tracking-[0.09em] text-slate-500 sm:text-[10px]">
+                  <span className={`mr-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${style.dot}`} />
+                  <span className={style.text}>{speaker?.name ?? 'Speaker'}</span> <span className="px-1 text-slate-300">·</span> {formatTimestamp(segment.timestampMs)}
                   {!segment.isFinal && <span className="ml-2 normal-case tracking-normal text-slate-400">Transcribing…</span>}
                 </div>
 
@@ -167,7 +213,7 @@ export function LiveDashboard({
                     )}
                   </div>
                 ) : (
-                  <p className="text-[16px] leading-[1.8] text-slate-700 sm:text-[17px]">{segment.text}</p>
+                  <p className={`text-[16px] leading-[1.8] sm:text-[17px] ${style.body}`}>{segment.text}</p>
                 )}
               </article>
             )

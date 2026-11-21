@@ -5,7 +5,12 @@ import { createLiveTranscription, type LiveTranscription } from '../services/aud
 type TranscriptionStatus = 'idle' | 'connecting' | 'recording' | 'stopping' | 'error'
 
 function upsertSegment(segments: TranscriptSegment[], segment: TranscriptSegment) {
-  if (segments.some(({ id, isFinal }) => id === segment.id && isFinal)) return segments
+  const final = segments.find(({ id, isFinal }) => id === segment.id && isFinal)
+  // A final segment only changes when its speaker label arrives.
+  if (final) {
+    if (!segment.speaker || segment.speaker === final.speaker) return segments
+    return segments.map((entry) => entry === final ? { ...final, speaker: segment.speaker } : entry)
+  }
   const updated = segments.filter(({ id }) => id !== segment.id)
   if (segment.text.trim()) updated.push(segment)
   return updated.sort((a, b) => a.timestampMs - b.timestampMs)
