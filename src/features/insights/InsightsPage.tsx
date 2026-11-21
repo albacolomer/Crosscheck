@@ -6,6 +6,7 @@ import {
   CircleHelp,
   ExternalLink,
   FileText,
+  RotateCcw,
   ShieldAlert,
   TriangleAlert,
 } from 'lucide-react'
@@ -22,6 +23,7 @@ interface InsightsPageProps {
   checks: ClaimCheck[]
   jobs: ProcessingJob[]
   onBack: () => void
+  onRestart: () => void
 }
 
 type ClaimState = ClaimCheck['status']
@@ -40,7 +42,7 @@ const laneDefinitions: { label: string; states: ClaimState[] }[] = [
   { label: 'Uncertain', states: ['UNVERIFIED', 'CHECKING'] },
 ]
 
-export function InsightsPage({ interviewId, createdAt, title, intervieweeName, transcript, checks: allChecks, jobs, onBack }: InsightsPageProps) {
+export function InsightsPage({ interviewId, createdAt, title, intervieweeName, transcript, checks: allChecks, jobs, onBack, onRestart }: InsightsPageProps) {
   const [completedActions, setCompletedActions] = useState<string[]>([])
   const summary = useInterviewSummary(interviewId, allChecks)
   // A failed job leaves a placeholder UNVERIFIED check; it is an operational failure, not a verdict.
@@ -107,6 +109,7 @@ export function InsightsPage({ interviewId, createdAt, title, intervieweeName, t
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button onClick={onBack} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 sm:text-sm"><FileText size={18} /> Open transcript</button>
+            <button onClick={onRestart} title="Start a new interview with the same context" className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 sm:text-sm"><RotateCcw size={18} /> New interview, same context</button>
             <button onClick={exportSummary} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-700 sm:text-sm"><ArrowDownToLine size={18} /> Export</button>
           </div>
         </div>

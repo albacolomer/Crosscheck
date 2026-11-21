@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { PreparationPage, type PreparedInterview } from './pages/PreparationPage'
 import { InsightsPage } from './features/insights/InsightsPage'
+import { clearShownWords } from './features/live/shown-words'
 import { LiveDashboard } from './features/live/LiveDashboard'
 import { useLiveInterview } from './hooks/useLiveInterview'
 import { useSpeakerNames } from './hooks/useSpeakerNames'
@@ -52,6 +53,15 @@ function App() {
     navigate('interview')
   }
 
+  /** Starts over with the same preparation context: a new backend interview that records right away. */
+  function restartInterview() {
+    if (!live.restart()) return
+    speakerNames.reset()
+    clearShownWords()
+    autoStart.current = true
+    if (page !== 'interview') navigate('interview')
+  }
+
   if (page === 'preparation' || !interview) {
     return <PreparationPage onStart={startInterview} />
   }
@@ -67,6 +77,7 @@ function App() {
         checks={live.factChecks}
         jobs={live.jobs}
         onBack={() => navigate('interview')}
+        onRestart={restartInterview}
       />
     )
   }
@@ -77,6 +88,7 @@ function App() {
 
   return (
     <LiveDashboard
+      key={live.session}
       title={live.interview?.title ?? 'New interview'}
       intervieweeName={live.interview?.intervieweeName ?? interview.intervieweeName}
       transcript={live.transcript}
@@ -90,10 +102,12 @@ function App() {
       recordingStatus={live.recordingStatus}
       error={live.recordingError ?? live.error}
       ending={live.ending}
+      restarting={live.restarting}
       onStartRecording={live.start}
       onStopRecording={() => void live.stop()}
       onRetryConnection={live.retry}
       onEndInterview={() => void endInterview()}
+      onRestartInterview={restartInterview}
     />
   )
 }

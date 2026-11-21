@@ -10,6 +10,7 @@ import {
   LoaderCircle,
   Mic,
   Pause,
+  RotateCcw,
   Square,
   X,
 } from 'lucide-react'
@@ -40,10 +41,12 @@ interface LiveDashboardProps {
   recordingStatus: RecordingStatus
   error: string | null
   ending: boolean
+  restarting: boolean
   onStartRecording: () => void
   onStopRecording: () => void
   onRetryConnection: () => void
   onEndInterview: () => void
+  onRestartInterview: () => void
 }
 
 const intervieweeStyles = [
@@ -81,11 +84,14 @@ export function LiveDashboard({
   recordingStatus,
   error,
   ending,
+  restarting,
   onStartRecording,
   onStopRecording,
   onRetryConnection,
   onEndInterview,
+  onRestartInterview,
 }: LiveDashboardProps) {
+  const [confirmRestart, setConfirmRestart] = useState(false)
   const [alertId, setAlertId] = useState<string | null>(null)
   const [infoId, setInfoId] = useState<string | null>(null)
   const [showAllTranscript, setShowAllTranscript] = useState(true)
@@ -171,7 +177,10 @@ export function LiveDashboard({
             </div>
           </div>
           <div className="ml-auto hidden sm:block"><VerdictCounter checks={checks} onReveal={notifications.reveal} /></div>
-          <button onClick={onEndInterview} disabled={ending || connectionStatus === 'creating'} className="inline-flex shrink-0 items-center gap-2.5 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-[0_3px_10px_rgba(220,38,38,0.22)] transition hover:bg-red-700 disabled:opacity-60 sm:px-5 sm:text-base 2xl:px-6 2xl:py-3.5">
+          <button onClick={() => setConfirmRestart(true)} disabled={ending || restarting || connectionStatus === 'creating'} aria-haspopup="dialog" className="inline-flex shrink-0 items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60 sm:px-5 sm:text-base 2xl:px-6 2xl:py-3.5">
+            {restarting ? <LoaderCircle size={16} className="animate-spin" /> : <RotateCcw size={16} />} <span className="hidden sm:inline">{restarting ? 'Restarting…' : 'Restart interview'}</span><span className="sm:hidden">Restart</span>
+          </button>
+          <button onClick={onEndInterview} disabled={ending || restarting || connectionStatus === 'creating'} className="inline-flex shrink-0 items-center gap-2.5 rounded-xl bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-[0_3px_10px_rgba(220,38,38,0.22)] transition hover:bg-red-700 disabled:opacity-60 sm:px-5 sm:text-base 2xl:px-6 2xl:py-3.5">
             {ending ? <LoaderCircle size={16} className="animate-spin" /> : <Square size={16} fill="currentColor" />} <span className="hidden sm:inline">{ending ? 'Ending…' : 'End interview'}</span><span className="sm:hidden">End</span>
           </button>
         </div>
@@ -270,6 +279,7 @@ export function LiveDashboard({
       </footer>
 
       <VerdictToasts toasts={notifications.toasts} copiedText={copiedText} onDismiss={notifications.dismiss} onView={openClaim} onCopy={copyText} />
+      {confirmRestart && <RestartConfirmDialog onConfirm={() => { setConfirmRestart(false); onRestartInterview() }} onCancel={() => setConfirmRestart(false)} />}
       {activeAlert && <FactAlertModal key={activeAlert.id} check={activeAlert} intervieweeName={intervieweeName} copiedText={copiedText} onCopy={copyText} onDismiss={() => setAlertId(null)} />}
     </main>
   )
@@ -379,6 +389,34 @@ function FactAlertModal({ check, intervieweeName, copiedText, onCopy, onDismiss 
         <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-6 py-4 sm:px-8 2xl:px-9">
           <button onClick={onDismiss} className="rounded-lg border border-slate-200 px-5 py-3 text-sm font-bold text-slate-700 hover:bg-slate-50">Dismiss</button>
           {firstQuestion && <button onClick={() => onCopy(firstQuestion)} className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-5 py-3 text-sm font-bold text-white hover:bg-slate-700">{copiedText === firstQuestion ? <Check size={17} /> : <Copy size={17} />}{copiedText === firstQuestion ? 'Copied' : 'Copy question 1'}</button>}
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function RestartConfirmDialog({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') onCancel()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [onCancel])
+
+  return (
+    <div className="live-fade-enter fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-4 backdrop-blur-[1px] sm:p-6" onMouseDown={(event) => { if (event.currentTarget === event.target) onCancel() }}>
+      <section role="alertdialog" aria-modal="true" aria-labelledby="restart-title" aria-describedby="restart-description" className="live-card-enter w-full max-w-[460px] rounded-2xl bg-white p-6 shadow-[0_24px_80px_rgba(0,0,0,0.28)] sm:p-7">
+        <div className="flex items-start gap-4">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-red-50 text-red-600"><RotateCcw size={19} /></span>
+          <div>
+            <h2 id="restart-title" className="text-lg font-bold text-slate-900 sm:text-xl">Restart interview?</h2>
+            <p id="restart-description" className="mt-1.5 text-sm leading-[1.6] text-slate-600 sm:text-base">The current transcript and checks will be discarded. Your preparation stays, and recording starts again right away.</p>
+          </div>
+        </div>
+        <div className="mt-6 flex items-center justify-end gap-3">
+          <button autoFocus onClick={onCancel} className="rounded-lg border border-slate-200 px-5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button onClick={onConfirm} className="inline-flex items-center gap-2 rounded-lg bg-red-600 px-5 py-2.5 text-sm font-bold text-white hover:bg-red-700"><RotateCcw size={16} />Restart</button>
         </div>
       </section>
     </div>
