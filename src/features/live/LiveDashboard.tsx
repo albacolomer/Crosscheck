@@ -93,6 +93,13 @@ export function LiveDashboard({
   const activeAlert = checks.find((check) => check.id === alertId)
   const failedExtractions = new Map(jobs.filter((job) => job.kind === 'extraction' && job.status === 'failed' && job.segmentId).map((job) => [job.segmentId, job.error]))
   const notifications = useVerdictNotifications(checks, connectionStatus)
+  const [handledAlert, setHandledAlert] = useState(0)
+  // A newly wrong claim opens the full centered detail right away (no corner toast).
+  if (notifications.alertRequest && notifications.alertRequest.seq !== handledAlert) {
+    setHandledAlert(notifications.alertRequest.seq)
+    setInfoId(null)
+    setAlertId(notifications.alertRequest.claimId)
+  }
   const transcript = showAllTranscript ? fullTranscript : fullTranscript.slice(-5)
   const speakerByLabel = new Map(speakers.map((speaker) => [speaker.label, speaker]))
   const isRecording = recordingStatus === 'recording' || recordingStatus === 'connecting'

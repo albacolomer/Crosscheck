@@ -16,6 +16,10 @@ const SOUND_STORAGE_KEY = 'crosscheck.verdictSound'
 
 let toastSequence = 0
 let flashSequence = 0
+let alertSequence = 0
+
+/** Wrong verdicts open the centered detail modal instead of a corner toast. */
+const isWrong = (status: ClaimCheck['status']) => status === 'CONTRADICTED' || status === 'MISLEADING'
 
 function readSoundPreference() {
   try {
@@ -69,6 +73,7 @@ export function useVerdictNotifications(checks: ClaimCheck[], connectionStatus: 
   const flashStarts = useRef(new Map<number, number>())
   const [soundEnabled, setSoundEnabledState] = useState(readSoundPreference)
   const announcedKeys = useRef(new Set<string>())
+  const [alertRequest, setAlertRequest] = useState<{ claimId: string; seq: number; status: ClaimCheck['status'] } | null>(null)
 
   // Derive notifications while rendering (React's "adjust state on prop change" pattern).
   if (previous.checks !== checks || previous.live !== live) {
@@ -83,9 +88,13 @@ export function useVerdictNotifications(checks: ClaimCheck[], connectionStatus: 
         setToasts(capToasts([
           ...toasts.filter((toast) => !resolvedIds.has(toast.check.id)),
           ...detected.map((check) => ({ key: `toast-${++toastSequence}`, kind: 'checking' as const, check })),
-          ...resolved.map((check) => ({ key: `toast-${++toastSequence}`, kind: 'verdict' as const, check })),
+          ...resolved.filter((check) => !isWrong(check.status)).map((check) => ({ key: `toast-${++toastSequence}`, kind: 'verdict' as const, check })),
         ]))
       }
+      // The most severe new wrong verdict (latest on ties) opens the modal.
+      const wrong = resolved.filter((check) => isWrong(check.status))
+      const alert = wrong.find((check) => check.status === 'CONTRADICTED') ?? wrong[0]
+      if (alert) setAlertRequest({ claimId: alert.id, seq: ++alertSequence, status: alert.status })
       if (resolved.length) {
         const next = new Map(flashing)
         for (const check of resolved) next.set(check.id, ++flashSequence)
@@ -121,6 +130,12 @@ export function useVerdictNotifications(checks: ClaimCheck[], connectionStatus: 
     else if (statuses.includes('MISLEADING')) playVerdictSound('MISLEADING')
   }, [toasts, soundEnabled])
 
+  // Wrong verdicts skip the toast stack, so they chime when their modal is requested.
+  useEffect(() => {
+    if (!alertRequest || !soundEnabled) return
+    if (alertRequest.status === 'CONTRADICTED' || alertRequest.status === 'MISLEADING') playVerdictSound(alertRequest.status)
+  }, [alertRequest, soundEnabled])
+
   const dismiss = useCallback((key: string) => {
     setToasts((current) => current.filter((toast) => toast.key !== key))
   }, [])
@@ -148,6 +163,8 @@ export function useVerdictNotifications(checks: ClaimCheck[], connectionStatus: 
 
   return {
     toasts,
+    /** Latest wrong verdict to open in the centered modal; `seq` changes per request. */
+    alertRequest,
     dismiss,
     dismissClaim,
     isFlashing: (claimId: string) => flashing.has(claimId),
