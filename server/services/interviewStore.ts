@@ -87,6 +87,18 @@ export class InterviewStore {
     return { segment: structuredClone(segment), duplicate: false }
   }
 
+  /**
+   * Attaches a speaker label to an existing segment. Diarization finishes after a segment is final,
+   * so this is the only change allowed to a final segment; it also applies after the interview ends.
+   */
+  setSpeaker(id: string, segmentId: string, speaker: string) {
+    const session = this.session(id)
+    const segment = session.state.transcript.find(entry => entry.id === segmentId)
+    if (!segment || segment.speaker === speaker) return
+    segment.speaker = speaker
+    this.publish(session)
+  }
+
   private queueExtraction(session: Session, segment: TranscriptSegment, job?: ProcessingJob) {
     const extraction: ProcessingJob = job ?? { id: randomUUID(), kind: 'extraction', status: 'queued', segmentId: segment.id }
     if (!job) session.state.jobs.push(extraction)

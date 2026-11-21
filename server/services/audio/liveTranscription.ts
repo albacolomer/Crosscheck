@@ -13,6 +13,7 @@ import type {
 } from '../../../shared/audio-transcription.ts'
 import type { TranscriptSegment } from '../../../shared/types.ts'
 import { createAudioTurns } from './audioTurns.ts'
+import { createSpeakerIdentifier, type SpeakerIdentifier } from './speakerDiarization.ts'
 
 const openAIRealtimeUrl = 'wss://api.openai.com/v1/realtime?intent=transcription'
 const maxFrameBytes = TRANSCRIPTION_SAMPLE_RATE
@@ -20,12 +21,24 @@ const maxBufferedBytes = 256 * 1024
 const timeoutMs = 12_000
 
 type SegmentListener = (segment: TranscriptSegment, interviewId?: string) => void | Promise<void>
+type SpeakerListener = (segmentId: string, speaker: string, interviewId?: string) => void
 type ClosingMessage = Extract<TranscriptionServerMessage, { type: 'finished' | 'error' }>
 
 interface LiveTranscriptionOptions {
   allowedOrigin: string
   apiKey?: string
+  /** Label final segments with `Speaker N` after they are published. Defaults to true. */
+  diarization?: boolean
   onFinalSegment?: SegmentListener
+  /** Receives the speaker label of a final segment that was already passed to `onFinalSegment`. */
+  onSpeaker?: SpeakerListener
+}
+
+interface SessionOptions {
+  interviewId?: string
+  identifySpeaker?: SpeakerIdentifier
+  onFinalSegment?: SegmentListener
+  onSpeaker?: SpeakerListener
 }
 
 interface TranscriptItem {
@@ -33,6 +46,12 @@ interface TranscriptItem {
   isFinal: boolean
   wasDisplayed: boolean
   timestampMs?: number
+  audio?: Buffer
+}
+
+interface PendingCommit {
+  timestampMs: number
+  audio: Buffer
 }
 
 function sendMessage(client: WebSocket, message: TranscriptionServerMessage) {
@@ -62,15 +81,14 @@ function isStopCommand(data: Buffer) {
 function startSession(
   client: WebSocket,
   apiKey: string,
-  interviewId?: string,
-  onFinalSegment?: SegmentListener,
+  { interviewId, identifySpeaker, onFinalSegment, onSpeaker }: SessionOptions,
 ) {
   const upstream = new WebSocket(openAIRealtimeUrl, {
     headers: { Authorization: 'Bearer ' + apiKey },
     handshakeTimeout: timeoutMs,
   })
   const sessionId = randomUUID()
-  const awaitingCommit: number[] = []
+  const awaitingCommit: PendingCommit[] = []
   const items = new Map<string, TranscriptItem>()
   const finalizedIds = new Set<string>()
   let ready = false
@@ -104,8 +122,8 @@ function startSession(
 
   const audio = createAudioTurns(
     (frame) => sendUpstream({ type: 'input_audio_buffer.append', audio: frame.toString('base64') }),
-    (timestampMs) => {
-      awaitingCommit.push(timestampMs)
+    (timestampMs, turnAudio) => {
+      awaitingCommit.push({ timestampMs, audio: turnAudio })
       sendUpstream({ type: 'input_audio_buffer.commit' })
     },
   )
@@ -128,7 +146,7 @@ function startSession(
       id: sessionId + ':' + itemId,
       text: item.isFinal ? item.text.trim() : item.text,
       isFinal: item.isFinal,
-      timestampMs: item.timestampMs ?? awaitingCommit[0] ?? audio.timestampMs,
+      timestampMs: item.timestampMs ?? awaitingCommit[0]?.timestampMs ?? audio.timestampMs,
     }
     if (segment.text.trim() || (item.isFinal && item.wasDisplayed)) {
       sendMessage(client, { type: 'segment', segment })
@@ -143,7 +161,20 @@ function startSession(
         console.warn('A final transcript segment could not be passed to its consumer.')
       })
     }
+    if (segment.text && item.audio && identifySpeaker) labelSpeaker(segment, item.audio, identifySpeaker)
     finishIfDrained()
+  }
+
+  // Speaker labels arrive after the final text, as an update of the same segment ID.
+  function labelSpeaker(segment: TranscriptSegment, turnAudio: Buffer, identify: SpeakerIdentifier) {
+    identify(turnAudio).then((speaker) => {
+      if (!speaker) return
+      sendMessage(client, { type: 'segment', segment: { ...segment, speaker } })
+      onSpeaker?.(segment.id, speaker, interviewId)
+    }).catch((error: unknown) => {
+      const status = (error as { status?: unknown } | null)?.status
+      console.warn('Speaker labeling failed' + (typeof status === 'number' ? ' (HTTP ' + status + ').' : '.'))
+    })
   }
 
   function handleUpstreamMessage(data: RawData) {
@@ -164,8 +195,8 @@ function startSession(
         break
       case 'input_audio_buffer.committed': {
         if (finalizedIds.has(event.item_id) || items.get(event.item_id)?.timestampMs !== undefined) break
-        const timestampMs = awaitingCommit.shift() ?? audio.timestampMs
-        publishItem(event.item_id, { timestampMs })
+        const commit = awaitingCommit.shift()
+        publishItem(event.item_id, { timestampMs: commit?.timestampMs ?? audio.timestampMs, audio: commit?.audio })
         break
       }
       case 'conversation.item.input_audio_transcription.delta': {
@@ -230,6 +261,19 @@ function startSession(
 
 export function attachLiveTranscription(server: Server, options: LiveTranscriptionOptions) {
   const bridge = new WebSocketServer({ noServer: true, maxPayload: maxFrameBytes })
+  // Keep one identifier per interview so speaker labels stay stable when recording pauses and resumes.
+  const speakerIdentifiers = new Map<string, SpeakerIdentifier>()
+
+  function speakerIdentifier(apiKey: string, interviewId?: string) {
+    if (options.diarization === false) return undefined
+    if (!interviewId) return createSpeakerIdentifier(apiKey)
+    let identify = speakerIdentifiers.get(interviewId)
+    if (!identify) {
+      identify = createSpeakerIdentifier(apiKey)
+      speakerIdentifiers.set(interviewId, identify)
+    }
+    return identify
+  }
 
   server.on('upgrade', (request, socket, head) => {
     const [path, query] = (request.url ?? '').split('?', 2)
@@ -248,7 +292,12 @@ export function attachLiveTranscription(server: Server, options: LiveTranscripti
         return
       }
       try {
-        startSession(client, options.apiKey, interviewId, options.onFinalSegment)
+        startSession(client, options.apiKey, {
+          interviewId,
+          identifySpeaker: speakerIdentifier(options.apiKey, interviewId),
+          onFinalSegment: options.onFinalSegment,
+          onSpeaker: options.onSpeaker,
+        })
       } catch {
         rejectClient(client, 'Could not configure OpenAI transcription. Check the API key and restart the backend.')
       }

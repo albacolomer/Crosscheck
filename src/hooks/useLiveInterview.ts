@@ -72,7 +72,10 @@ export function useLiveInterview(prepared: PreparedContext | null) {
     const segments = new Map<string, TranscriptSegment>()
     for (const segment of snapshot?.transcript ?? []) segments.set(segment.id, segment)
     for (const segment of recording.segments) {
-      if (!segments.get(segment.id)?.isFinal) segments.set(segment.id, segment)
+      const acknowledged = segments.get(segment.id)
+      if (!acknowledged?.isFinal) segments.set(segment.id, segment)
+      // The socket can deliver a speaker label before the snapshot does.
+      else if (!acknowledged.speaker && segment.speaker) segments.set(segment.id, { ...acknowledged, speaker: segment.speaker })
     }
     return [...segments.values()]
   }, [snapshot, recording.segments])

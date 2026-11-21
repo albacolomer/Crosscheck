@@ -3,8 +3,12 @@ import { PreparationPage, type PreparedInterview } from './pages/PreparationPage
 import { InsightsPage } from './features/insights/InsightsPage'
 import { LiveDashboard } from './features/live/LiveDashboard'
 import { useLiveInterview } from './hooks/useLiveInterview'
+import { useSpeakerNames } from './hooks/useSpeakerNames'
+import type { Participant } from './lib/speakers'
 
 type Page = 'preparation' | 'interview' | 'insights'
+
+const noParticipants: Participant[] = []
 
 function pageFromLocation(): Page {
   if (window.location.pathname === '/interview') return 'interview'
@@ -16,6 +20,7 @@ function App() {
   const [page, setPage] = useState<Page>(pageFromLocation)
   const [interview, setInterview] = useState<PreparedInterview | null>(null)
   const live = useLiveInterview(interview)
+  const speakerNames = useSpeakerNames(interview?.interviewees ?? noParticipants, live.transcript)
 
   useEffect(() => {
     function handlePopState() {
@@ -48,7 +53,7 @@ function App() {
         createdAt={live.interview?.createdAt}
         title={live.interview?.title ?? 'New interview'}
         intervieweeName={live.interview?.intervieweeName ?? interview.intervieweeName}
-        transcript={live.transcript}
+        transcript={speakerNames.namedTranscript}
         checks={live.factChecks}
         jobs={live.jobs}
         onBack={() => navigate('interview')}
@@ -65,6 +70,10 @@ function App() {
       title={live.interview?.title ?? 'New interview'}
       intervieweeName={live.interview?.intervieweeName ?? interview.intervieweeName}
       transcript={live.transcript}
+      speakers={speakerNames.speakers}
+      speakerCandidates={speakerNames.candidates}
+      onRenameSpeaker={speakerNames.rename}
+      onSwapSpeakers={speakerNames.swap}
       checks={live.factChecks}
       connectionStatus={live.connectionStatus}
       recordingStatus={live.recordingStatus}

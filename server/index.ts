@@ -11,8 +11,17 @@ const server = createServer(app)
 attachLiveTranscription(server, {
   allowedOrigin: process.env.CLIENT_ORIGIN ?? 'http://localhost:5173',
   apiKey: process.env.OPENAI_API_KEY?.trim(),
+  diarization: process.env.SPEAKER_DIARIZATION?.trim().toLowerCase() !== 'off',
   onFinalSegment(segment, interviewId) {
     if (interviewId) store.ingest(interviewId, segment)
+  },
+  onSpeaker(segmentId, speaker, interviewId) {
+    if (!interviewId) return
+    try {
+      store.setSpeaker(interviewId, segmentId, speaker)
+    } catch {
+      console.warn('A speaker label could not be attached to its interview.')
+    }
   },
 })
 
