@@ -42,7 +42,18 @@ function App() {
   }
 
   if (page === 'insights') {
-    return <InsightsPage checks={live.factChecks} onBack={() => navigate('interview')} />
+    return (
+      <InsightsPage
+        interviewId={live.interviewId}
+        createdAt={live.interview?.createdAt}
+        title={live.interview?.title ?? 'New interview'}
+        intervieweeName={live.interview?.intervieweeName ?? interview.intervieweeName}
+        transcript={live.transcript}
+        checks={live.factChecks}
+        jobs={live.jobs}
+        onBack={() => navigate('interview')}
+      />
+    )
   }
 
   async function endInterview() {
