@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import type { ClaimCheck, TranscriptSegment } from '../../../shared/types'
 import type { InterviewConnectionStatus } from '../../hooks/useLiveInterview'
+import { AnimatedText } from './AnimatedText'
 import { formatTimestamp } from './mock-data'
 
 export type RecordingStatus = 'idle' | 'connecting' | 'recording' | 'stopping' | 'error'
@@ -145,7 +146,7 @@ export function LiveDashboard({
             const isInterviewer = segment.speaker === 'Journalist'
             const isInfoOpen = claim?.id === infoId
             return (
-              <article key={segment.id} className="relative py-3.5 sm:py-4">
+              <article key={segment.id} className="live-segment-enter relative py-3.5 sm:py-4">
                 <div className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.09em] text-slate-500 sm:text-[10px]">
                   {isInterviewer ? 'INTERVIEWER' : 'INTERVIEWEE'} <span className="px-1 text-slate-300">·</span> {formatTimestamp(segment.timestampMs)}
                   {!segment.isFinal && <span className="ml-2 normal-case tracking-normal text-slate-400">Transcribing…</span>}
@@ -153,21 +154,23 @@ export function LiveDashboard({
 
                 {claim ? (
                   <div className="relative">
-                    <span className={`text-[16px] leading-[1.8] sm:text-[17px] ${claim.status === 'CHECKING' ? 'text-slate-500' : 'text-slate-900'}`}>
-                      <span className={claimUnderline(claim.status)}>{segment.text}</span>
+                    <span className={`text-[16px] leading-[1.8] sm:text-[17px] transition-colors duration-300 ${claim.status === 'CHECKING' ? 'text-slate-500' : 'text-slate-900'}`}>
+                      <span className={claimUnderline(claim.status)}><AnimatedText id={segment.id} text={segment.text} /></span>
                       {' '}
-                      <ClaimStatusButton
-                        check={claim}
-                        infoOpen={isInfoOpen}
-                        onClick={() => selectClaim(claim)}
-                      />
+                      <span key={claim.status} className="live-badge-enter">
+                        <ClaimStatusButton
+                          check={claim}
+                          infoOpen={isInfoOpen}
+                          onClick={() => selectClaim(claim)}
+                        />
+                      </span>
                     </span>
                     {isInfoOpen && claim.status === 'SUPPORTED' && (
                       <ClaimInfoPopover check={claim} copiedText={copiedText} onCopy={copyText} onClose={() => setInfoId(null)} />
                     )}
                   </div>
                 ) : (
-                  <p className="text-[16px] leading-[1.8] text-slate-700 sm:text-[17px]">{segment.text}</p>
+                  <p className="text-[16px] leading-[1.8] text-slate-700 sm:text-[17px]"><AnimatedText id={segment.id} text={segment.text} /></p>
                 )}
               </article>
             )
@@ -223,7 +226,7 @@ function ClaimInfoPopover({ check, copiedText, onCopy, onClose }: { check: Claim
   ]
 
   return (
-    <div className="absolute left-0 top-full z-20 mt-2 w-[min(365px,calc(100vw-3rem))] rounded-xl border border-slate-200 bg-white shadow-[0_16px_45px_rgba(15,23,42,0.16)]" onClick={(event) => event.stopPropagation()}>
+    <div className="live-card-enter absolute left-0 top-full z-20 mt-2 w-[min(365px,calc(100vw-3rem))] rounded-xl border border-slate-200 bg-white shadow-[0_16px_45px_rgba(15,23,42,0.16)]" onClick={(event) => event.stopPropagation()}>
       <div className="flex items-center gap-2 px-4 pt-3">
         <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-bold text-emerald-800"><Check size={11} />Correct</span>
         <span className="text-[9px] text-slate-400">with context</span>
@@ -252,8 +255,8 @@ function FactAlertModal({ check, intervieweeName, copiedText, onCopy, onDismiss 
   const firstQuestion = check.suggestedQuestions[0]?.text
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-3 backdrop-blur-[1px] sm:p-6" onMouseDown={(event) => { if (event.currentTarget === event.target) onDismiss() }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="fact-alert-title" className="max-h-[92vh] w-full max-w-[640px] overflow-y-auto rounded-2xl bg-white shadow-[0_24px_80px_rgba(0,0,0,0.28)]" onMouseDown={(event) => event.stopPropagation()}>
+    <div className="live-fade-enter fixed inset-0 z-50 grid place-items-center bg-slate-950/50 p-3 backdrop-blur-[1px] sm:p-6" onMouseDown={(event) => { if (event.currentTarget === event.target) onDismiss() }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="fact-alert-title" className="live-card-enter max-h-[92vh] w-full max-w-[640px] overflow-y-auto rounded-2xl bg-white shadow-[0_24px_80px_rgba(0,0,0,0.28)]" onMouseDown={(event) => event.stopPropagation()}>
         <div className="flex items-center gap-3 px-5 pt-5 sm:px-6">
           <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-extrabold text-white ${isRedAlert ? 'bg-red-600' : 'bg-amber-600'}`}><X size={12} />{statusLabel}</span>
           <span className="text-[10px] font-medium text-slate-500">{intervieweeName} · {formatTimestamp(check.timestampMs)}</span>
